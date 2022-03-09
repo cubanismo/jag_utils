@@ -1,4 +1,5 @@
 /allsyms
 /symval
 /size
+/filefix
 *.o

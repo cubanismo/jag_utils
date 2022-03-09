@@ -1,6 +1,6 @@
 CFLAGS = -I./include
 
-PROGS = allsyms symval size
+PROGS = allsyms symval size filefix
 
 all: $(PROGS)
 
@@ -13,6 +13,9 @@ symval: symval.c readint.c size.h proto.h include/osbind.h
 	$(CC) $(CFLAGS) $< -o $@
 
 size: size.c readint.o size.h proto.h include/osbind.h
+	$(CC) $(CFLAGS) readint.o $< -o $@
+
+filefix: filefix.c readint.o size.h proto.h include/osbind.h
 	$(CC) $(CFLAGS) readint.o $< -o $@
 
 .PHONY:clean
