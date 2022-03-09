@@ -19,6 +19,8 @@
 
 #include "readint.c"
 
+#include <inttypes.h>
+
 /**************************************************************************/
 /**************************************************************************/
 /**************************************************************************/
@@ -106,7 +108,7 @@ int i;
 /* For Jaguar we don't really care about all of the fields, */
 /* but we still have to read them all! */
 
-void read_sec_hdr( short in_handle, SEC_HDR *section )
+void read_sec_hdr( int in_handle, SEC_HDR *section )
 {
 	Fread(in_handle, 8L, &section->name);
 
@@ -131,7 +133,7 @@ void read_sec_hdr( short in_handle, SEC_HDR *section )
 /* do the appropriate steps to write out the TEXT, DATA, and maybe the */
 /* SYMBOLS file */
 
-short process_abs_file( char *fname, short in_handle )
+short process_abs_file( char *fname, int in_handle )
 {
 char *ptr, original_fname[256];
 
@@ -184,7 +186,7 @@ char *ptr, original_fname[256];
 /**************************************************************************/
 /**************************************************************************/
 
-void read_dri_header( short in_handle )
+void read_dri_header( int in_handle )
 {
 	theHeader.tsize = readlong(in_handle);
 	theHeader.dsize = readlong(in_handle);
@@ -205,7 +207,7 @@ void read_dri_header( short in_handle )
 /**************************************************************************/
 /**************************************************************************/
 
-void read_coff_header( short in_handle )
+void read_coff_header( int in_handle )
 {
 	if( theHeader.magic == 0x0150 )
 	{
@@ -242,13 +244,13 @@ void read_coff_header( short in_handle )
 
 		coff_header.num_sections = 3;
 
-		coff_header.sym_offset = sizeof(BSD_Object);
+		coff_header.sym_offset = PACKED_SIZEOF(BSD_Object);
 		coff_header.sym_offset += bsd_object.tsize;
 		coff_header.sym_offset += bsd_object.dsize;
 		coff_header.sym_offset += bsd_object.trsize;
 		coff_header.sym_offset += bsd_object.drsize;
 		
-		coff_header.num_symbols = bsd_object.ssize / sizeof(BSD_Symbol);
+		coff_header.num_symbols = bsd_object.ssize / PACKED_SIZEOF(BSD_Symbol);
 		coff_header.opt_hdr_size = 0L;
 		coff_header.flags = 0L;
 	}
@@ -331,7 +333,7 @@ void print_coff_info(void)
 /**************************************************************************/
 /**************************************************************************/
 
-void print_dri_symbols( short fhand )
+void print_dri_symbols( int fhand )
 {
 char HUGE *ptr;
 long longcount, skipped, offset;
@@ -344,15 +346,15 @@ char **cursymbol;
 /* a big problem. */
 
 	if( theHeader.magic == 0x601b )					/* ABS executable */
-	  offset = sizeof(ABS_HDR) + theHeader.tsize + theHeader.dsize;
+	  offset = PACKED_SIZEOF(ABS_HDR) + theHeader.tsize + theHeader.dsize;
 	else								/* Object Module */
-	  offset = sizeof(DRI_Object) + theHeader.tsize + theHeader.dsize;
+	  offset = PACKED_SIZEOF(DRI_Object) + theHeader.tsize + theHeader.dsize;
 
 	Fseek( offset, fhand, 0 );
 	symbuf = farmalloc(theHeader.ssize);
 	if( ! symbuf)
 	{
-		printf( "Cannot allocate sufficient memory (%ld bytes) for buffer!\n", theHeader.ssize );
+		printf( "Cannot allocate sufficient memory (%" PRId32 " bytes) for buffer!\n", theHeader.ssize );
 		exit(-1);
 	}
 
@@ -414,7 +416,7 @@ char **cursymbol;
 /**************************************************************************/
 /**************************************************************************/
 
-void print_coff_symbols( short fhand )
+void print_coff_symbols( int fhand )
 {
 long sym, symsize, stringtable_size, offset;
 long skipped, unknown_type;
@@ -509,9 +511,10 @@ void usage(void)
 /**************************************************************************/
 /**************************************************************************/
 
-void main( short argc, char *argv[] )
+void main( int argc, char *argv[] )
 {
-short in_handle, has_period;
+int in_handle;
+short has_period;
 char infile[256], *ptr, *filename;
 int argument;
 
@@ -541,7 +544,7 @@ int argument;
 	strncpy( infile, filename, 255 );
 	has_period = (strchr(infile,'.') != NULL) ? 1 : 0;
 
-	in_handle = (short)Fopen( infile, 0 );
+	in_handle = Fopen( infile, 0 );
 	if( in_handle < 0 )
 	{
 		/* If there's an extension specified in the input filename, */
@@ -557,7 +560,7 @@ int argument;
 
 		strcat(infile,".cof");
 
-		in_handle = (short)Fopen( infile, 0 );
+		in_handle = Fopen( infile, 0 );
 		if( in_handle < 0 )
 		{
 			/* file.COF not found, so try .ABS extension */
@@ -566,7 +569,7 @@ int argument;
 			  *ptr=0;
 			strcat(infile,".abs");
 
-			if((in_handle = (short)Fopen(infile,0)) < 0)
+			if((in_handle = Fopen(infile,0)) < 0)
 			{
 				printf("Error: Can't open inputfile: %s\n",filename);
 				exit(1);
