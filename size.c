@@ -402,7 +402,7 @@ void HUGE *symbuf, HUGE *a, HUGE *b;
 /* Read the symbols one at a time (because doing it in one chunk isn't working right...) */
 
 	printf( "Reading symbols from offset %ld (0x%08lx)...\n", offset, offset );
-	ptr = (char far *)symbuf;
+	ptr = (char FAR *)symbuf;
 	for( longcount = 0; longcount <= theHeader.ssize; longcount += 14 )
 	{
 		Fread( fhand, 14L, ptr );

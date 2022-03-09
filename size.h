@@ -13,8 +13,7 @@
 
 #else
 
-#include <osbind.h>
-#define __OSBIND_H
+#include "osbind.h"
 
 #define PTR_TYPE
 #define HUGE
@@ -23,9 +22,6 @@
 #define farfree(x) Mfree(x)
 
 #define my_qsort(a,b,c,d) qsort(a,b,c,d)
-
-#define lseek(a,b,c) Fseek(b,a,c)
-#define SEEK_ABS SEEK_SET
 
 #endif
 

@@ -485,7 +485,7 @@ char **cursymbol;
 			}
 		}
 		if (skipped) {
-			printf("%s: symbol not found\n", cursymbol);
+			printf("%s: symbol not found\n", *cursymbol);
 		}
 	}	
 

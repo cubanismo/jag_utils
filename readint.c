@@ -1,7 +1,12 @@
-#ifdef __MSDOS__
 #include "osbind.h"
+
+#ifdef __MSDOS__
+#define SWAP_BYTES 1
 #else
-#include <osbind.h>
+#include <endian.h>
+#if BYTE_ORDER == LITTLE_ENDIAN
+#define SWAP_BYTES 1
+#endif
 #endif
 
 /************************************************************************/
@@ -21,7 +26,7 @@ unsigned short readshort( int fhand )
 short s;
 
 	Fread( fhand, 2L, &s );
-#ifdef __MSDOS__
+#ifdef SWAP_BYTES
 	s = (s << 8) | (s >> 8);
 #endif
 	return( s );
@@ -30,12 +35,12 @@ short s;
 unsigned long readlong( int fhand )
 {
 unsigned long l;
-#ifdef __MSDOS__
+#ifdef SWAP_BYTES
 unsigned long a, b, c, d;
 #endif
 
 	Fread( fhand, 4L, &l );
-#ifdef __MSDOS__
+#ifdef SWAP_BYTES
 	a = (l >> 24) & 0x000000ffL;
 	b = (l >> 8) & 0x0000ff00L;
 	c = (l << 8) & 0x00ff0000L;
