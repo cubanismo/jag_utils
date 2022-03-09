@@ -1,9 +1,10 @@
 
 /*
-	SIZE.C
+	filefix.c
 
 	Written by Mike Fulton
-	Last Modified: 12:05pm, December 12 1994
+	Version 7 recreated by James Jones based on SIZE.C by Mike Fulton
+	Last Modified: 9:12pm, March 29 2022
 
 	This program should take a file name with or without extension
 	read in the .ABS or .COF and produce .SYM, .TXT, and .DTA files,
@@ -25,12 +26,11 @@
 
 #define DEBUG	(0)
 
-#define MAJOR_VERSION (2)
-#define MINOR_VERSION (23)
+#define MAJOR_VERSION (6)
+#define MINOR_VERSION (99)
 
-#define SORT_BY_NAME	(0)
-#define SORT_BY_VALUE	(1)
-#define SORT_NONE	(2)
+#define SEC_TEXT	(0)
+#define SEC_DATA	(1)
 
 /**************************************************************************/
 /**************************************************************************/
@@ -43,10 +43,10 @@ SEC_HDR txt_header, dta_header, bss_header;
 BSD_Object bsd_object;
 BSD_Symbol *coff_symbols;
 
-int show_symbols = 0;
-int skip_duplicates = 1;
-int sort_options = SORT_BY_VALUE;
-int opt_skip_line_numbers = 0;
+static short quiet = 0;
+static short use_fread = 0;
+static int pad = 0;
+static uint8_t pad_byte = 0xff;
 
 char *coff_symbol_name_strings;
 
@@ -75,18 +75,15 @@ uint32_t sym_a_val, sym_b_val;
 	aa = (char HUGE *)a;
 	bb = (char HUGE *)b;
 	
-	if( sort_options == SORT_BY_NAME )
+	for( i = 0; i < 8; i++ )	/* Check byte by byte so it fails faster! */
 	{
-		for( i = 0; i < 8; i++ )	/* Check byte by byte so it fails faster! */
-		{
-			if( *aa > *bb )
-			  return(1);
-			else if( *aa < *bb )
-			  return(-1);
+		if( *aa > *bb )
+			return(1);
+		else if( *aa < *bb )
+			return(-1);
 
-			aa++;
-			bb++;
-		}
+		aa++;
+		bb++;
 	}
 
 /* If sorting by name, but they are the same, then check value. */
@@ -120,25 +117,18 @@ int i;
 	sym2 = (BSD_Symbol *)b;
 
 	i = 0;
-	if( sort_options == SORT_BY_NAME )
-	{
-		offset = sym1->name_offset;
-		str1 = &coff_symbol_name_strings[offset] - 4;
-		offset = sym2->name_offset;
-		str2 = &coff_symbol_name_strings[offset] - 4;
-	
-		i = strcmp(str1, str2);
-	}
-	else if( sort_options == SORT_BY_VALUE )
-	{
-		if( sym1->value > sym2->value )
-		  return(1);
-		else if( sym1->value < sym2->value )
-		  return(-1);
-		else
-		  i = 0;
-	}
-	return(i);
+	offset = sym1->name_offset;
+	str1 = &coff_symbol_name_strings[offset] - 4;
+	offset = sym2->name_offset;
+	str2 = &coff_symbol_name_strings[offset] - 4;
+
+	i = strcmp(str1, str2);
+
+	if (i) return i;
+
+	if( sym1->value > sym2->value ) return 1;
+	else if( sym1->value < sym2->value ) return -1;
+	else return 0;
 }
 
 /**************************************************************************/
@@ -176,11 +166,11 @@ void read_sec_hdr( int in_handle, SEC_HDR *section )
 
 short process_abs_file( char *fname, int in_handle )
 {
-char *ptr, original_fname[256];
+char *ptr, original_fname[260];
 
 /* Save a copy of the original filename, then strip off the filename extension. */
 
-	strncpy( original_fname, fname, 256 );
+	strncpy( original_fname, fname, 255 );
 	if((ptr = strchr(fname,'.')) != NULL)
 	  *ptr=0;
 
@@ -195,25 +185,20 @@ char *ptr, original_fname[256];
 
 /* See if the magic number indicates a DRI/Alcyon-format executable or object module file */
 	
-	if( theHeader.magic == 0x601b || theHeader.magic == 0x601a )
+	if( theHeader.magic == 0x601b )
 	{			
 		read_dri_header( in_handle );
-		print_dri_info();
-		if( show_symbols )
-		  print_dri_symbols( in_handle );
-		return(1);
+		if ( !quiet )
+		  print_dri_info();
 	}
 
 /* Not DRI-format, so test for BSD/COFF. */
 	
-	else if( theHeader.magic == 0x0150 ||
-		(theHeader.magic == 0x0000 && bsd_object.magic == 0x00000107L) )
+	else if( theHeader.magic == 0x0150 )
 	{
 		read_coff_header( in_handle );
-		print_coff_info();
-		if( show_symbols )
-		  print_coff_symbols( in_handle );
-		return(1);
+		if ( !quiet )
+		  print_coff_info();
 	}
 
 /* Sorry, don't know what it is. */
@@ -224,7 +209,197 @@ char *ptr, original_fname[256];
 		Fclose(in_handle);
 		exit(1);
 	}
-	return(0);
+
+/* Write out the data section file */
+
+	if ( theHeader.dsize > 0 )
+	{
+		write_sec_file( fname, in_handle, SEC_DATA );
+	}
+	else if ( !quiet )
+	{
+		printf("Data Segment empty, no DTA file written.\n");
+	}
+
+/* Write out the text section file */
+
+	if ( theHeader.tsize > 0 )
+	{
+		write_sec_file( fname, in_handle, SEC_TEXT );
+	}
+	else if ( !quiet )
+	{
+		printf("Text Segment empty, no TX file written.\n");
+	}
+
+	write_db_file( fname, in_handle );
+
+	return(1);
+}
+
+#define CHUNK_SIZE 256
+
+void write_sec_file( const char *base_fname, int in_handle, short sec_type )
+{
+char outfile[260];
+uint8_t buf[CHUNK_SIZE];
+size_t count, bytes_left;
+off_t offset;
+int out_handle;
+const char is_cof = (theHeader.magic == 0x0150);
+
+	strncpy(outfile, base_fname, 255);
+	outfile[255] = '\0';
+
+	switch ( sec_type )
+	{
+	case SEC_TEXT:
+		strcat(outfile, ".tx");
+		if ( is_cof )
+		{
+			offset = txt_header.offset;
+		}
+		else
+		{
+			offset = PACKED_SIZEOF(ABS_HDR);
+		}
+		bytes_left = theHeader.tsize;
+		break;
+
+	case SEC_DATA:
+		strcat(outfile, ".dta");
+		if ( is_cof )
+		{
+			offset = dta_header.offset;
+		}
+		else
+		{
+			offset = PACKED_SIZEOF(ABS_HDR) + theHeader.tsize;
+		}
+		bytes_left = theHeader.dsize;
+		break;
+
+	default:
+		printf("Unknown section type\n");
+		exit(-1);
+	}
+
+	out_handle = Fopen( outfile, FO_WRONLY | FO_CREATE );
+
+	if ( out_handle < 0 )
+	{
+		printf( "Can't create %s\n", outfile );
+		exit(-1);
+	}
+
+	if ( Fseek( offset, in_handle, 0 ) == -1 )
+	{
+		printf( "Could not seek to section in file\n" );
+		exit(-1);
+	}
+
+	while ( bytes_left > 0 )
+	{
+		count = (bytes_left > CHUNK_SIZE) ? CHUNK_SIZE : bytes_left;
+
+		if ( Fread( in_handle, count, buf ) != count )
+		{
+			printf( "Can't read section from file\n" );
+			exit(-1);
+		}
+
+		if ( Fwrite( out_handle, count, buf ) != count )
+		{
+			printf( "Can't write section to file\n" );
+			exit(-1);
+		}
+
+		bytes_left -= count;
+	}
+
+	Fclose( out_handle );
+}
+
+void write_db_file( const char *base_fname, int in_handle)
+{
+char outfile[260];
+char strbuf[277];
+int out_handle;
+const char is_cof = (theHeader.magic == 0x0150);
+
+	strncpy(outfile, base_fname, 255);
+	outfile[255] = '\0';
+
+	strcat(outfile, ".db");
+
+	out_handle = Fopen( outfile, FO_WRONLY | FO_CREATE );
+
+	if ( out_handle < 0 )
+	{
+		printf( "Can't create %s\n", outfile );
+		exit(-1);
+	}
+
+	sprintf( strbuf, "#Created with FILEFIX v%d.%d\n", MAJOR_VERSION, MINOR_VERSION );
+	Fwrite( out_handle, strlen(strbuf), strbuf );
+
+	sprintf( strbuf, "gag on\n" );
+	Fwrite( out_handle, strlen(strbuf), strbuf );
+
+	if ( theHeader.tsize > 0 )
+	{
+		sprintf( strbuf, "%s %s.tx %" PRIx32 "\n",
+			 (use_fread != 0) ? "fread" : "read",
+			 base_fname, theHeader.tbase );
+		Fwrite( out_handle, strlen(strbuf), strbuf );
+	}
+
+	if ( theHeader.dsize > 0 )
+	{
+		sprintf( strbuf, "%s %s.dta %" PRIx32 "\n",
+			 (use_fread != 0) ? "fread" : "read",
+			 base_fname, theHeader.dbase );
+		Fwrite( out_handle, strlen(strbuf), strbuf );
+	}
+
+	/* If it's a DRI/Alcyon file... */
+	sprintf( strbuf, "getsym %s.%s\n", base_fname,
+		 is_cof ? "cof" : "sym" );
+	Fwrite( out_handle, strlen(strbuf), strbuf );
+
+	sprintf( strbuf, "echo \"Symbols loaded\"\n" );
+	Fwrite( out_handle, strlen(strbuf), strbuf );
+
+	sprintf( strbuf, "gag off\n" );
+	Fwrite( out_handle, strlen(strbuf), strbuf );
+
+	sprintf( strbuf, "echo \"\tstart\tsize\tend\"\n" );
+	Fwrite( out_handle, strlen(strbuf), strbuf );
+
+	sprintf( strbuf, "echo \"text\t%" PRIx32 "\t%" PRIx32 "\t%" PRIx32 "\"\n",
+		 theHeader.tbase, theHeader.tsize,
+		 (theHeader.tsize > 0) ?
+		 theHeader.tbase + theHeader.tsize - 1 :
+		 theHeader.tbase );
+	Fwrite( out_handle, strlen(strbuf), strbuf );
+
+	sprintf( strbuf, "echo \"data\t%" PRIx32 "\t%" PRIx32 "\t%" PRIx32 "\"\n",
+		 theHeader.dbase, theHeader.dsize,
+		 (theHeader.dsize > 0) ?
+		 theHeader.dbase + theHeader.dsize - 1 :
+		 theHeader.dbase );
+	Fwrite( out_handle, strlen(strbuf), strbuf );
+
+	sprintf( strbuf, "echo \"bss\t%" PRIx32 "\t%" PRIx32 "\t%" PRIx32 "\"\n",
+		 theHeader.bbase, theHeader.bsize,
+		 theHeader.bbase + theHeader.bsize - 1 );
+	Fwrite( out_handle, strlen(strbuf), strbuf );
+
+	sprintf( strbuf, "xpc %" PRIx32 "\n",
+		 is_cof ? run_header.entry : theHeader.tbase);
+	Fwrite( out_handle, strlen(strbuf), strbuf );
+
+	Fclose( out_handle );
 }
 
 /**************************************************************************/
@@ -238,19 +413,13 @@ void read_dri_header( int in_handle )
 	theHeader.bsize = readlong(in_handle);
 	theHeader.ssize = readlong(in_handle);
 
-	if( theHeader.magic == 0x601b )		/* If it's an executable... */
-	{
-		printf("DRI/Alcyon format absolute location executable file detected \n");
-		theHeader.res1 = readlong(in_handle);		/* not used... */
-		theHeader.tbase = readlong(in_handle);
-		theHeader.relocflag = readshort(in_handle);	/* not used... */
-		theHeader.dbase = readlong(in_handle);
-		theHeader.bbase = readlong(in_handle);
-	}
-	else					/* If it's an OBJECT MODULE... */
-	{
-		printf("DRI/Alcyon format relocatable object module file detected \n");
-	}
+	if ( !quiet )
+	  printf("DRI-format file detected...\n");
+	theHeader.res1 = readlong(in_handle);		/* not used... */
+	theHeader.tbase = readlong(in_handle);
+	theHeader.relocflag = readshort(in_handle);	/* not used... */
+	theHeader.dbase = readlong(in_handle);
+	theHeader.bbase = readlong(in_handle);
 }
 
 /**************************************************************************/
@@ -259,53 +428,37 @@ void read_dri_header( int in_handle )
 
 void read_coff_header( int in_handle )
 {
-	if( theHeader.magic == 0x0150 )
-	{
-		printf("COFF format absolute executable program file detected.\n");
-		Fseek( 0L, in_handle, 0 );
+	if ( !quiet )
+	  printf("BSD/COFF format file detected...\n");
+	Fseek( 0L, in_handle, 0 );
 
-		coff_header.magic = readshort(in_handle);
-		coff_header.num_sections = readshort(in_handle);
-		coff_header.date = readlong(in_handle);
-		coff_header.sym_offset = readlong(in_handle);
-		coff_header.num_symbols = readlong(in_handle);
-		coff_header.opt_hdr_size = readshort(in_handle);
-		coff_header.flags = readshort(in_handle);
+#define READ_PRINT_SHORT(field) do { \
+	coff_header.field = readshort(in_handle); \
+	printf("coff_header." #field " = 0x%04" PRIx16 "\n", \
+	       coff_header.field); \
+} while (0)
 
-		run_header.magic = readlong(in_handle);
-		run_header.tsize = readlong(in_handle);
-		run_header.dsize = readlong(in_handle);
-		run_header.bsize = readlong(in_handle);
-		run_header.entry = readlong(in_handle);
-		run_header.tbase = readlong(in_handle);
-		run_header.dbase = readlong(in_handle);
-	}
-	else
-	{		
-		printf( "BSD format object module file detected.\n" );
-		Fseek( 0L, in_handle, 0 );
+#define READ_PRINT_LONG(field) do { \
+	coff_header.field = readlong(in_handle); \
+	printf("coff_header." #field " = 0x%08" PRIx32 "\n", \
+	       coff_header.field); \
+} while (0)
 
-		bsd_object.magic = readlong(in_handle);
-		bsd_object.tsize = readlong(in_handle);
-		bsd_object.dsize = readlong(in_handle);
-		bsd_object.bsize = readlong(in_handle);
-		bsd_object.ssize = readlong(in_handle);
-		bsd_object.entry = readlong(in_handle);
-		bsd_object.trsize = readlong(in_handle);
-		bsd_object.drsize = readlong(in_handle);
+	READ_PRINT_SHORT(magic);
+	READ_PRINT_SHORT(num_sections);
+	READ_PRINT_LONG(date);
+	READ_PRINT_LONG(sym_offset);
+	READ_PRINT_LONG(num_symbols);
+	READ_PRINT_SHORT(opt_hdr_size);
+	READ_PRINT_SHORT(flags);
 
-		coff_header.num_sections = 3;
-
-		coff_header.sym_offset = PACKED_SIZEOF(BSD_Object);
-		coff_header.sym_offset += bsd_object.tsize;
-		coff_header.sym_offset += bsd_object.dsize;
-		coff_header.sym_offset += bsd_object.trsize;
-		coff_header.sym_offset += bsd_object.drsize;
-		
-		coff_header.num_symbols = bsd_object.ssize / PACKED_SIZEOF(BSD_Symbol);
-		coff_header.opt_hdr_size = 0L;
-		coff_header.flags = 0L;
-	}
+	run_header.magic = readlong(in_handle);
+	run_header.tsize = readlong(in_handle);
+	run_header.dsize = readlong(in_handle);
+	run_header.bsize = readlong(in_handle);
+	run_header.entry = readlong(in_handle);
+	run_header.tbase = readlong(in_handle);
+	run_header.dbase = readlong(in_handle);
 	
 	read_sec_hdr(in_handle, &txt_header);
 	read_sec_hdr(in_handle, &dta_header);
@@ -339,13 +492,9 @@ void print_dri_info(void)
 	printf( "BSS Segment size = 0x%08" PRIx32 " bytes\n", theHeader.bsize );
 
 	printf( "Symbol Table size = 0x%08" PRIx32 " bytes\n", theHeader.ssize );
-
-	if( theHeader.magic != 0x601a )		/* If not an OBJECT module */
-	{
-		printf( "Absolute Address for text segment = 0x%08" PRIx32 "\n", theHeader.tbase );
-		printf( "Absolute Address for data segment = 0x%08" PRIx32 "\n", theHeader.dbase );
-		printf( "Absolute Address for BSS segment = 0x%08" PRIx32 "\n\n", theHeader.bbase );
-	}
+	printf( "Absolute Address for text segment = 0x%08" PRIx32 "\n", theHeader.tbase );
+	printf( "Absolute Address for data segment = 0x%08" PRIx32 "\n", theHeader.dbase );
+	printf( "Absolute Address for BSS segment = 0x%08" PRIx32 "\n", theHeader.bbase );
 }
 
 /**************************************************************************/
@@ -354,32 +503,20 @@ void print_dri_info(void)
 
 void print_coff_info(void)
 {
-	if( theHeader.magic == 0x0150 )
-	{
-//		printf( "%d sections specified\n", coff_header.num_sections);
-//		printf( "The additional header size is %d bytes\n", coff_header.opt_hdr_size );
-//		printf( "Magic Number for RUN_HDR = 0x%08" PRIx32 "\n", run_header.magic );
+	printf( "%" PRId16 " sections specified\n", coff_header.num_sections);
+	printf( "Symbol Table offset = %" PRId32 "\n", coff_header.sym_offset );
 
-		printf( "Text Segment Size = 0x%08" PRIx32 "\n", run_header.tsize );
-		printf( "Data Segment Size = 0x%08" PRIx32 "\n", run_header.dsize );
-		printf( "BSS Segment Size = 0x%08" PRIx32 "\n", run_header.bsize );
+	printf( "Symbol Table contains %" PRId32 " symbol entries\n", coff_header.num_symbols );
+	printf( "The additional header size is %" PRId16 " bytes\n", coff_header.opt_hdr_size );
+	printf( "Magic Number for RUN_HDR = 0x%08" PRIx32 "\n", run_header.magic );
 
-//		printf( "Symbol Table offset = %ld (0x%08" PRIx32 ")\n", coff_header.sym_offset, coff_header.sym_offset );
+	printf( "Text Segment Size = %" PRId32 "\n", run_header.tsize );
+	printf( "Data Segment Size = %" PRId32 "\n", run_header.dsize );
+	printf( "BSS Segment Size = %" PRId32 "\n", run_header.bsize );
 
-		printf( "Symbol Table contains %" PRId32 " symbol entries\n", coff_header.num_symbols );
-
-		printf( "Starting Address for executable = 0x%08" PRIx32 "\n", run_header.entry );
-		printf( "Start of Text Segment = 0x%08" PRIx32 "\n", run_header.tbase );
-		printf( "Start of Data Segment = 0x%08" PRIx32 "\n", run_header.dbase );
-	
-		printf( "Start of BSS Segment = 0x%08" PRIx32 "\n\n", bss_header.start_address );
-	}
-	else
-	{
-		printf( "Text Segment Size = 0x%08" PRIx32 "\n", bsd_object.tsize );
-		printf( "Data Segment Size = 0x%08" PRIx32 "\n", bsd_object.dsize );
-		printf( "BSS Segment Size = 0x%08" PRIx32 "\n", bsd_object.bsize );
-	}
+	printf( "Starting Address for executable = 0x%08" PRIx32 "\n", run_header.entry );
+	printf( "Start of Text Segment = 0x%08" PRIx32 "\n", run_header.tbase );
+	printf( "Start of Data Segment = 0x%08" PRIx32 "\n", run_header.dbase );
 }
 
 /**************************************************************************/
@@ -400,10 +537,7 @@ void HUGE *symbuf, HUGE *a, HUGE *b;
 /* memory (MSDOS memory... less than 600K), but this shouldn't be */
 /* a big problem. */
 
-	if( theHeader.magic == 0x601b )					/* ABS executable */
-	  offset = PACKED_SIZEOF(ABS_HDR) + theHeader.tsize + theHeader.dsize;
-	else								/* Object Module */
-	  offset = PACKED_SIZEOF(DRI_Object) + theHeader.tsize + theHeader.dsize;
+	offset = PACKED_SIZEOF(ABS_HDR) + theHeader.tsize + theHeader.dsize;
 
 	Fseek( offset, fhand, 0 );
 	symbuf = farmalloc(theHeader.ssize);
@@ -423,8 +557,7 @@ void HUGE *symbuf, HUGE *a, HUGE *b;
 		ptr += 14;
 	}
 
-	if( sort_options != SORT_NONE )
-	  my_qsort( symbuf, (int)(theHeader.ssize/14), 14, dri_symbol_compare );
+	my_qsort( symbuf, (int)(theHeader.ssize/14), 14, dri_symbol_compare );
 
 	ptr = symbuf;
 	skipped = 0;
@@ -437,7 +570,7 @@ void HUGE *symbuf, HUGE *a, HUGE *b;
 		uptr = (uint8_t *)ptr;
 
 		show_it = 1;
-		if( skip_duplicates && ( (longcount+14) < theHeader.ssize ) )
+		if( (longcount+14) < theHeader.ssize )
 		{
 			show_it = dri_symbol_compare(a,b);
 			if( ! show_it )
@@ -533,197 +666,33 @@ unsigned int mask, bit;
 /**************************************************************************/
 /**************************************************************************/
 
-void print_coff_symbols( int fhand )
-{
-int32_t sym, symsize, stringtable_size, offset;
-int32_t skipped, unknown_type;
-
-	printf( "\nDump of symbols in this file:\n\n" );
-
-/* Calculate the size needed for the symbol table */
-
-	symsize = coff_header.num_symbols * sizeof(BSD_Symbol);
-
-/* Move to the symbol table, allocate memory for it */
-	
-	offset = coff_header.sym_offset;
-	Fseek(offset,fhand,0);
-
-	coff_symbols = (BSD_Symbol *)farmalloc( symsize );
-	if( ! coff_symbols )
-	{
-		printf( "Cannot allocate memory for symbol information!\n" );
-		exit(-1);
-	}
-
-/* Read the symbols in one by one */
-
-	for( sym = 0; sym < coff_header.num_symbols; sym++ )
-	{
-		coff_symbols[sym].name_offset = readlong( fhand );
-		coff_symbols[sym].type = readbyte( fhand );
-		coff_symbols[sym].other = readbyte( fhand );
-		coff_symbols[sym].description = readshort( fhand );
-		coff_symbols[sym].value = readlong( fhand );
-	}
-
-/* Get the size of the string table (the name strings that go with */
-/* the symbols) then allocate some memory and read it in. */
-/* The string table starts with a longword containing the size, so the */
-/* offsets used by the symbols must be adjusted by -4 when you access */
-/* the individual strings. */
-
-	stringtable_size = readlong( fhand );
-	
-	coff_symbol_name_strings = farmalloc( stringtable_size );
-	if( ! coff_symbol_name_strings )
-	{
-		printf( "Cannot allocate memory for symbol information!\n" );
-		exit(-1);
-	}
-
-	Fread( fhand, stringtable_size, coff_symbol_name_strings );
-
-	if( sort_options != SORT_NONE )
-	  my_qsort( coff_symbols, (int)coff_header.num_symbols, sizeof(BSD_Symbol), coff_symbol_compare );
-
-	skipped = unknown_type = 0;
-	for( sym = 0; sym < coff_header.num_symbols; sym++ )
-	{
-	int32_t offset, value;
-	int type, other, description, show_it;
-	
-		offset = coff_symbols[sym].name_offset - 4;	/* Adjust offset by -4 as mentioned earlier... */
-		value = coff_symbols[sym].value;
-		type = (int)coff_symbols[sym].type;
-		other = (int)coff_symbols[sym].other;
-		description = (int)coff_symbols[sym].description;
-
-		show_it = 1;	/* assume we're showing it until we learn otherwise... */
-
-		if( skip_duplicates )
-		{
-			/* the compare function will return 0 if the symbol names are the same */
-			
-			show_it = coff_symbol_compare(&coff_symbols[sym], &coff_symbols[sym+1]);
-			if( ! show_it )
-			  skipped++;
-		}
-
-		if( show_it )
-		  unknown_type += show_bsd_symbol_type( value, &coff_symbol_name_strings[offset], type, other, description );
-	}	
-
-	printf( "\n" );
-	if( skipped )
-	  printf( "%" PRId32 " duplicate symbol names were skipped.\n", skipped );
-	if( unknown_type )
-	  printf( "%" PRId32 " symbols were special source-level debugging flags.\n", unknown_type );
-	printf( "\n\n" );
-	
-	farfree( coff_symbols );
-	farfree( coff_symbol_name_strings );
-}
-
-/**************************************************************************/
-/**************************************************************************/
-/**************************************************************************/
-
-int show_bsd_symbol_type( int32_t value, char *str, int symtype, int other, int description )
-{
-	switch( symtype )
-	{
-		case 0xE0:
-		case 0xC0:
-		case 0xA0:
-		case 0x80:
-		case 0x40:
-		case 0x24:
-		case 0x20:
-//			printf( "0x%08" PRIx32 "  %-35s  Unknown Type: 0x%02x\n", value, " " /*str*/, symtype );
-			return(1);
-
-		case 0x64:
-			printf( "%-47s  Primary Source Code File\n", str );
-			break;
-		case 0x84:
-			printf( "%-47s  Included Source Code File\n", str );
-			break;
-/********/
-		case 0x44:
-			if( ! opt_skip_line_numbers )
-			  printf( "0x%08" PRIx32 "  %-35s  Text Line Number\n", value, str );
-			break;
-		case 0x48:
-			if( ! opt_skip_line_numbers )
-			  printf( "0x%08" PRIx32 "  %-35s  BSS Line Number\n", value, " " );
-			break;
-/********/
-		case 0x09:
-			printf( "0x%08" PRIx32 " %-35s  Global BSS\n", value, str );
-			break;
-		case 0x08:
-			printf( "0x%08" PRIx32 "  %-35s  BSS\n", value, str );
-			break;
-/********/
-		case 0x07:
-			printf( "0x%08" PRIx32 "  %-35s  Global Data\n", value, str );
-			break;
-		case 0x06:
-			printf( "0x%08" PRIx32 "  %-35s  Data\n", value, str );
-			break;
-/********/
-		case 0x05:
-			printf( "0x%08" PRIx32 "  %-35s  Global Text\n", value, str );
-			break;
-		case 0x04:
-			printf( "0x%08" PRIx32 "  %-35s  Text\n", value, str );
-			break;
-/********/
-		case 0x03:
-			printf( "0x%08" PRIx32 "  %-35s  Global Equate or GPU/DSP Text\n", value, str );
-			break;
-		case 0x02:
-			printf( "0x%08" PRIx32 "  %-35s  Equate or GPU/DSP Text\n", value, str );
-			break;
-
-		case 0x01:
-			printf( "0x%08" PRIx32 "  %-35s  Global (Undefined Segment)\n", value, str );
-			break;
-/********/
-		default:
-			printf( "0x%08" PRIx32 "  %-35s  Unknown Type: 0x%02x\n", value, str, symtype );
-			return(1);
-	}
-	return(0);
-}
-
-/**************************************************************************/
-/**************************************************************************/
-/**************************************************************************/
-
 void usage(void)
 {
-	printf( "Usage:\n\tSIZE [-sd] [-v[0|1|2]] [-l] <filename>\n\n");
-	printf( "\t-s  = Show list of all symbols in file\n\n" );
-	printf( "\t-sd = Don't skip duplicate symbol names in listing\n\n" );
+	printf("Filefix: Version %d.%d\n\n", MAJOR_VERSION, MINOR_VERSION );
+	printf( "Usage:\n\tFILEFIX [options] <filename>\n\n" );
+	printf( "<filename> = a DRI or BSD/COFF format absolute-position executable file.\n" );
+	printf( "A filename extension of .COF or.ABS is assumed if none is provided\n" );
 
-	printf( "\t-v0 = Don't sort symbols at all\n" );
-	printf( "\t-v1 = Sort symbols by name (default)\n" );
-	printf( "\t-v2 = Sort symbols by value\n\n" );
-
-	printf( "\t-l  = Skip special BSD debugging info line number symbols\n\n" );
-	
-	printf( "\t<filename> = a DRI or BSD/COFF format absolute-position\n" );
-	printf( "\texecutable file or DRI/Alcyon format object file.\n" );
-	printf( "\tA filename extension of .ABS or .COF is assumed if none is\n" );
-	printf( "\tspecified.  (i.e. SIZE testprog will look for <testprog> then\n" );
-	printf( "\t<testprog.cof> then <testprog.abs> before giving up.\n\n" );
-
+	printf( "(i.e. \"FILEFIX testprog\" will look for <testprog>, then <testprog.cof>,\n" );
+	printf( "then <testprog.abs>, before giving up." );
 	printf( "For Example:\n\n" );
-	printf( "\tSIZE program     << finds 'program', 'program.cof', or 'program.abs'\n" );
-	printf( "\tSIZE program.abs\n\n" );
-	}
+
+	printf( "\tfilefix program\t<< finds 'program', 'program.cof', or 'program.abs'\n" );
+	printf( "\tfilefix program.abs\n\n" );
+
+	printf( "Option switches are:\n\n" );
+	printf( "-q = Quiet mode, don't print information about executable file.\n\n" );
+	printf( "-r <romfile> = Create ROM image file named <romfile> from executable (*)\n\n" );
+	printf( "-rs <romfile> = Same as -r, except also create DB script to load and run file. (*)\n\n" );
+	printf( "-p = Pad ROM file with zero bytes to next 2mb boundary (*)\n" );
+	printf( "    (this must be used alongwith the -r or -rs switch)\n\n" );
+	printf( "-p4 = Same as -p, exceptpadsto a 4mb boundary (*)\n" );
+	printf( "    (this must be used alongwith the -r or -rs switch)\n\n" );
+	printf( "-z = Pad unusedportionswith $00 bytes instead of $FF bytes (*)\n" );
+	printf( "    (this must be used alongwith the -p or -p4 switch)\n\n" );
+	printf( "-f = Use 'fread' command in DB script, instead of 'read'\n\n" );
+	printf( " (*) These options are not yet functional in version 7.\n\n" );
+}
 
 /**************************************************************************/
 /**************************************************************************/
@@ -733,20 +702,14 @@ void main( int argc, char *argv[] )
 {
 int in_handle;
 short has_period;
-char infile[256], *ptr, *filename;
+char infile[260], *ptr, *filename, *rom_filename = NULL;
 int argument;
-
-	printf( "SIZE: Version %d.%02d\n\n", MAJOR_VERSION, MINOR_VERSION );
 
 	if(argc < 2)
 	{
 		usage();
 		exit(-1);
 	}
-
-/* Set default options */
-	
-	sort_options = SORT_BY_NAME;	/* Sort symbols by name */
 
 /* Parse command line arguments */
 
@@ -758,62 +721,53 @@ int argument;
 		{
 			filename = argv[argument];
 		}
-		else if( ! strcmp( "-s", argv[argument] ) )
+		else if( ! strcmp( "-q", argv[argument] ) )
 		{
-			show_symbols = 1;		/* Show symbols */
-			skip_duplicates = 1;		/* and skip duplicate names */
+			quiet = 1;
 		}
-		else if( ! strcmp( "-sd", argv[argument] ) )
+		else if( ! strcmp( "-r", argv[argument] ) )
 		{
-			show_symbols = 1;		/* Show symbols */
-			skip_duplicates = 0;		/* but don't skip duplicate names */
+			argument++;
+			if (argument >= argc)
+			{
+				usage();
+				exit(-1);
+			}
+			rom_filename = argv[argument];
 		}
-		else if( ! strcmp( "-d", argv[argument] ) )	/* Same as -sd */
+		else if( ! strcmp( "-rs", argv[argument] ) )
 		{
-			show_symbols = 1;		/* Show symbols */
-			skip_duplicates = 0;		/* but don't skip duplicate names */
+			argument++;
+			if (argument >= argc)
+			{
+				usage();
+				exit(-1);
+			}
+			rom_filename = argv[argument];
 		}
-		else if( ! strcmp( "-l", argv[argument] ) )	/* Same as -sd */
+		else if( ! strcmp( "-p", argv[argument] ) )
 		{
-			opt_skip_line_numbers = 1;
+			pad = 2;		/* Pad to 2mb boundary */
 		}
-		else if( ! strcmp( "-v0", argv[argument] ) )
+		else if( ! strcmp( "-p4", argv[argument] ) )
 		{
-			sort_options = SORT_NONE;
-			skip_duplicates = 0;		/* but don't skip duplicate names */
+			pad = 4; /* Pad to 4mb boundary */
 		}
-		else if( ! strcmp( "-v1", argv[argument] ) )
+		else if( ! strcmp( "-z", argv[argument] ) )
 		{
-			sort_options = SORT_BY_NAME;
+			pad_byte = 0x00; /* Pad with $00 instead of $ff */
 		}
-		else if( ! strcmp( "-v2", argv[argument] ) )
+		else if( ! strcmp( "-f", argv[argument] ) )
 		{
-			sort_options = SORT_BY_VALUE;
-			skip_duplicates = 0;		/* but don't skip duplicate names */
-		}
-		else if( ! strcmp( "-v", argv[argument] ) )
-		{
-			sort_options = SORT_BY_VALUE;	/* Sort symbols by value */
+			use_fread = 1;
 		}
 		else if( strncmp( "-", argv[argument], 1 ) ) /* unrecognized switch */
 		{
 			usage();
 			exit(-1);
 		}
-#if 0
-		else if( (argument+1) < argc )
-		{
-			usage();
-			exit(-1);
-		}
-#endif
 	}
 
-/* If you don't sort by name (sort by value), then don't skip duplicate symbols. */
-
-	if( sort_options != SORT_BY_NAME )
-	  skip_duplicates = 0;
-	
 /*	Look for FILENAME.EXT (exactly as given on commandline), if that's
 	not found, and filename specified has no extension, then look
 	for FILENAME.COF, and FILENAME.ABS, and do it in that order. */
