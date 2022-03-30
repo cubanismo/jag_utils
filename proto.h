@@ -23,6 +23,7 @@ void print_dri_symbols ( int fhand );
 void print_coff_symbols( int fhand );
 void write_sec_file( const char *base_fname, int in_handle, short section );
 void write_db_file( const char *base_fname, int in_handle );
+void write_sym_file( const char *base_fname, int fhand );
 void show_dri_symbol_type( unsigned int symtype );
 int show_bsd_symbol_type( int32_t value, char *str, int symtype, int other, int description );
 void usage(void);

@@ -51,3 +51,27 @@ unsigned long a, b, c, d;
 #endif
 }
 
+long writelong( int fhand, long lval )
+{
+unsigned l;
+#ifdef SWAP_BYTES
+unsigned long a, b, c, d;
+
+	a = (lval >> 24) & 0x000000ffL;
+	b = (lval >> 8) & 0x0000ff00L;
+	c = (lval << 8) & 0x00ff0000L;
+	d = (lval << 24) & 0xff000000L;
+	l = (a | b | c | d);
+#else
+	l = lval;
+#endif
+	return Fwrite( fhand, 4L, &l );
+}
+	
+long writeshort( int fhand, short sval )
+{
+#ifdef SWAP_BYTES
+	sval = (sval << 8) | (sval >> 8);
+#endif
+	return Fwrite( fhand, 2L, &sval );
+}

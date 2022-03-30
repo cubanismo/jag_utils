@@ -234,6 +234,11 @@ char *ptr, original_fname[260];
 
 	write_db_file( fname, in_handle );
 
+	if( theHeader.magic == 0x601b )
+	{
+		write_sym_file( fname, in_handle );
+	}
+
 	return(1);
 }
 
@@ -422,6 +427,20 @@ void read_dri_header( int in_handle )
 	theHeader.bbase = readlong(in_handle);
 }
 
+void write_dri_header( int out_handle, const ABS_HDR *header )
+{
+	writeshort(out_handle, header->magic);
+	writelong(out_handle, header->tsize);
+	writelong(out_handle, header->dsize);
+	writelong(out_handle, header->bsize);
+	writelong(out_handle, header->ssize);
+	writelong(out_handle, header->res1);
+	writelong(out_handle, header->tbase);
+	writeshort(out_handle, header->relocflag);
+	writelong(out_handle, header->dbase);
+	writelong(out_handle, header->bbase);
+}
+
 /**************************************************************************/
 /**************************************************************************/
 /**************************************************************************/
@@ -523,19 +542,19 @@ void print_coff_info(void)
 /**************************************************************************/
 /**************************************************************************/
 
-void print_dri_symbols( int fhand )
+void write_sym_file( const char *base_fname, int fhand )
 {
 char HUGE *ptr;
+char HUGE *dptr;
 uint8_t *uptr;
 int32_t longcount, skipped, offset;
 void HUGE *symbuf, HUGE *a, HUGE *b;
+int out_handle;
+char outfile[259];
 
-	printf( "\nDump of symbols in this file:\n\n" );
-
-/* Read the symbols, sort them, print them. */
+/* Read the symbols, sort them, deduplicate them, and then dump them. */
 /* This sort of assumes your symbol table will fit in available */
-/* memory (MSDOS memory... less than 600K), but this shouldn't be */
-/* a big problem. */
+/* memory, but this shouldn't be a big problem. */
 
 	offset = PACKED_SIZEOF(ABS_HDR) + theHeader.tsize + theHeader.dsize;
 
@@ -549,7 +568,8 @@ void HUGE *symbuf, HUGE *a, HUGE *b;
 
 /* Read the symbols one at a time (because doing it in one chunk isn't working right...) */
 
-	printf( "Reading symbols from offset %" PRId32 " (0x%08" PRIx32 ")...\n", offset, offset );
+	printf( "Reading symbols...\n" );
+
 	ptr = (char FAR *)symbuf;
 	for( longcount = 0; longcount < theHeader.ssize; longcount += 14 )
 	{
@@ -557,9 +577,12 @@ void HUGE *symbuf, HUGE *a, HUGE *b;
 		ptr += 14;
 	}
 
+	printf( "Read %d symbols from file\n", longcount / 14 );
+
+	printf( "Sorting and eliminating duplicate symbols...\n" );
 	my_qsort( symbuf, (int)(theHeader.ssize/14), 14, dri_symbol_compare );
 
-	ptr = symbuf;
+	dptr = ptr = symbuf;
 	skipped = 0;
 	for (longcount = 0 ; longcount < theHeader.ssize ; longcount += 14)
 	{
@@ -579,44 +602,42 @@ void HUGE *symbuf, HUGE *a, HUGE *b;
 
 		if( show_it )
 		{
-		short i;
-
-			for( i = 0; i < 8; i++ )
+			if ( dptr != ptr )
 			{
-				if( ptr[i] == 0 )
-				{
-					for( ; i < 8; i++ )
-					  ptr[i] = ' ';
-				}
+				memcpy( dptr, ptr, 14 );
 			}
-
-/* print the values byte by byte because it works on any machine... */
-			
-			printf( "0x%02x%02x%02x%02x",
-				(unsigned int)uptr[10], (unsigned int)uptr[11],
-				(unsigned int)uptr[12], (unsigned int)uptr[13] );
-
-//printf( "0x%08" PRIx32 ": ", ptr );
-
-			printf( "\t%c%c%c%c%c%c%c%c\t",
-				ptr[0], ptr[1], ptr[2], ptr[3],
-				ptr[4], ptr[5], ptr[6], ptr[7] );
-
-//printf( "\t%02x%02x%02x%02x%02x%02x%02x%02x\n",
-//	ptr[0], ptr[1], ptr[2], ptr[3],
-//	ptr[4], ptr[5], ptr[6], ptr[7] );
-				
-			show_dri_symbol_type( ((unsigned int)uptr[8] * 256) + uptr[9] );
+			dptr += 14;
 		}
 		ptr += 14;
 	}
 
-	printf( "\n" );
-	
-	if( skipped )
-	  printf( "%" PRId32 " duplicate symbol names were skipped.\n", skipped );
+	memcpy(&tmpHeader, &theHeader, sizeof(tmpHeader));
+	tmpHeader.tsize = 0;
+	tmpHeader.dsize = 0;
+	tmpHeader.ssize = longcount - (skipped * PACKED_SIZEOF(DRI_Symbol));
 
-	printf( "\n\n" );
+	strncpy(outfile, base_fname, 255);
+	outfile[255] = '\0';
+	strcat(outfile, ".sym");
+
+	out_handle = Fopen( outfile, FO_WRONLY | FO_CREATE );
+
+	if ( out_handle < 0 )
+	{
+		printf( "Can't create %s\n", outfile );
+		exit(-1);
+	}
+
+	write_dri_header( out_handle, &tmpHeader );
+
+	ptr = symbuf;
+	for (longcount = 0 ; longcount < tmpHeader.ssize ; longcount += PACKED_SIZEOF(DRI_Symbol))
+	{
+		Fwrite( out_handle, PACKED_SIZEOF(DRI_Symbol), ptr );
+		ptr += PACKED_SIZEOF(DRI_Symbol);
+	}
+
+	Fclose( out_handle );
 	farfree( symbuf );
 }
 
