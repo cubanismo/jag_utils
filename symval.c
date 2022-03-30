@@ -28,7 +28,7 @@
 #define DEBUG	(0)
 
 #define MAJOR_VERSION (1)
-#define MINOR_VERSION (0)
+#define MINOR_VERSION (1)
 
 /**************************************************************************/
 /**************************************************************************/
@@ -361,7 +361,7 @@ char **cursymbol;
 /* Read the symbols one at a time (because doing it in one chunk isn't working right...) */
 
 	ptr = (char *)symbuf;
-	for( longcount = 0; longcount <= theHeader.ssize; longcount += 14 )
+	for( longcount = 0; longcount < theHeader.ssize; longcount += 14 )
 	{
 		Fread( fhand, 14L, ptr );
 		ptr += 14;

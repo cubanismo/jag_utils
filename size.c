@@ -26,7 +26,7 @@
 #define DEBUG	(0)
 
 #define MAJOR_VERSION (2)
-#define MINOR_VERSION (22)
+#define MINOR_VERSION (23)
 
 #define SORT_BY_NAME	(0)
 #define SORT_BY_VALUE	(1)
@@ -417,7 +417,7 @@ void HUGE *symbuf, HUGE *a, HUGE *b;
 
 	printf( "Reading symbols from offset %" PRId32 " (0x%08" PRIx32 ")...\n", offset, offset );
 	ptr = (char FAR *)symbuf;
-	for( longcount = 0; longcount <= theHeader.ssize; longcount += 14 )
+	for( longcount = 0; longcount < theHeader.ssize; longcount += 14 )
 	{
 		Fread( fhand, 14L, ptr );
 		ptr += 14;
@@ -437,7 +437,7 @@ void HUGE *symbuf, HUGE *a, HUGE *b;
 		uptr = (uint8_t *)ptr;
 
 		show_it = 1;
-		if( skip_duplicates )
+		if( skip_duplicates && ( (longcount+14) < theHeader.ssize ) )
 		{
 			show_it = dri_symbol_compare(a,b);
 			if( ! show_it )
