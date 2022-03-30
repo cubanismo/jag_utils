@@ -223,9 +223,8 @@ char *ptr, original_fname[260];
 		     ( theHeader.tbase >= ROM_END ) )
 		{
 			printf("This program does not execute from ROM space.\n"
-			       "No ROM image file will be created.\n");
-			Fclose(in_handle);
-			exit(-1);
+			       "The ROM image file created may not be usable, but we\n"
+			       "will create it anyway!\n\n");
 		}
 		else if ( theHeader.tbase != ROM_START )
 		{
