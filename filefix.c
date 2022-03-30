@@ -32,6 +32,11 @@
 #define SEC_TEXT	(0)
 #define SEC_DATA	(1)
 
+#define ROM_BASE	(0x800000)
+#define ROM_HDR_SIZE	(0x2000)
+#define ROM_START	(ROM_BASE + ROM_HDR_SIZE)
+#define ROM_END		(0xE00000)
+
 /**************************************************************************/
 /**************************************************************************/
 /**************************************************************************/
@@ -45,8 +50,9 @@ BSD_Symbol *coff_symbols;
 
 static short quiet = 0;
 static short use_fread = 0;
-static int pad = 0;
+static size_t align_size = 0;
 static uint8_t pad_byte = 0xff;
+static const char *romfile = NULL;
 
 char *coff_symbol_name_strings;
 
@@ -210,33 +216,56 @@ char *ptr, original_fname[260];
 		exit(1);
 	}
 
+	if ( romfile )
+	{
+		if ( ( theHeader.tbase < ROM_START ) ||
+		     ( theHeader.tbase >= ROM_END ) )
+		{
+			printf("This program does not execute from ROM space.\n"
+			       "No ROM image file will be created.\n");
+			Fclose(in_handle);
+			exit(-1);
+		}
+		else if ( theHeader.tbase != ROM_START )
+		{
+			/* ... we will will create it ... [sic] */
+			printf("This program does not start at the proper address of 0x%x\n"
+			       "The ROM image file created may not be executable, but we will\n"
+			       "will create it anyway!\n\n", ROM_START);
+		}
+
+		write_rom_file( in_handle );
+	}
+	else
+	{
 /* Write out the data section file */
 
-	if ( theHeader.dsize > 0 )
-	{
-		write_sec_file( fname, in_handle, SEC_DATA );
-	}
-	else if ( !quiet )
-	{
-		printf("Data Segment empty, no DTA file written.\n");
-	}
+		if ( theHeader.dsize > 0 )
+		{
+			write_sec_file( fname, in_handle, SEC_DATA );
+		}
+		else if ( !quiet )
+		{
+			printf("Data Segment empty, no DTA file written.\n");
+		}
 
 /* Write out the text section file */
 
-	if ( theHeader.tsize > 0 )
-	{
-		write_sec_file( fname, in_handle, SEC_TEXT );
-	}
-	else if ( !quiet )
-	{
-		printf("Text Segment empty, no TX file written.\n");
-	}
+		if ( theHeader.tsize > 0 )
+		{
+			write_sec_file( fname, in_handle, SEC_TEXT );
+		}
+		else if ( !quiet )
+		{
+			printf("Text Segment empty, no TX file written.\n");
+		}
 
-	write_db_file( fname, in_handle );
+		write_db_file( fname, in_handle );
 
-	if( theHeader.magic == 0x601b )
-	{
-		write_sym_file( fname, in_handle );
+		if( theHeader.magic == 0x601b )
+		{
+			write_sym_file( fname, in_handle );
+		}
 	}
 
 	return(1);
@@ -247,8 +276,7 @@ char *ptr, original_fname[260];
 void write_sec_file( const char *base_fname, int in_handle, short sec_type )
 {
 char outfile[260];
-uint8_t buf[CHUNK_SIZE];
-size_t count, bytes_left;
+size_t bytes_left;
 off_t offset;
 int out_handle;
 const char is_cof = (theHeader.magic == 0x0150);
@@ -297,6 +325,16 @@ const char is_cof = (theHeader.magic == 0x0150);
 		exit(-1);
 	}
 
+	write_sec( out_handle, in_handle, offset, bytes_left );
+	Fclose( out_handle );
+}
+
+size_t write_sec( int out_handle, int in_handle, off_t offset, size_t bytes_left )
+{
+uint8_t buf[CHUNK_SIZE];
+size_t count;
+size_t bytes_written = 0;
+
 	if ( Fseek( offset, in_handle, 0 ) == -1 )
 	{
 		printf( "Could not seek to section in file\n" );
@@ -315,12 +353,111 @@ const char is_cof = (theHeader.magic == 0x0150);
 
 		if ( Fwrite( out_handle, count, buf ) != count )
 		{
+
 			printf( "Can't write section to file\n" );
 			exit(-1);
 		}
 
 		bytes_left -= count;
+		bytes_written += count;
 	}
+
+	return bytes_written;
+}
+
+static size_t pad( int out_handle, size_t cur_offset, size_t target_offset )
+{
+uint8_t buf[CHUNK_SIZE];
+size_t bytes_written = 0;
+
+	memset( buf, pad_byte, CHUNK_SIZE );
+
+	while ( ( cur_offset + CHUNK_SIZE ) <= target_offset )
+	{
+		Fwrite( out_handle, CHUNK_SIZE, buf );
+		cur_offset += CHUNK_SIZE;
+		bytes_written += CHUNK_SIZE;
+	}
+
+	while ( cur_offset < target_offset )
+	{
+		Fwrite( out_handle, 1, &pad_byte );
+		cur_offset++;
+		bytes_written++;
+	}
+
+	return bytes_written;
+}
+
+static void pad_up( int out_handle, size_t cur_offset)
+{
+size_t target_size;
+
+	if ( !align_size )
+		return;
+	
+	if ( !quiet )
+	  printf("Wrote %zu bytes to file so far...\n", cur_offset);
+
+	// This doesn't really do the right thing when tbase is not
+	// equal to ROM_START, but it matches what v6.81 does.
+	target_size = (cur_offset + ROM_HDR_SIZE + (align_size - 1)) &
+		~(align_size - 1);
+
+	if ( !quiet )
+	  printf("Padding end of ROM image file with %zu %s bytes\n",
+		 target_size - (cur_offset + ROM_HDR_SIZE),
+		 pad_byte ? "$FF" : "ZERO" );
+
+	pad( out_handle, cur_offset + ROM_HDR_SIZE, target_size );
+}
+
+void write_rom_file( int in_handle )
+{
+const char is_cof = (theHeader.magic == 0x0150);
+size_t cur_offset = 0;
+size_t sec_offset = is_cof ? txt_header.offset : PACKED_SIZEOF(ABS_HDR);
+int out_handle;
+
+	if ( !quiet )
+	  printf( "Creating ROM image file: %s\n", romfile );
+
+	out_handle = Fopen( romfile, FO_WRONLY | FO_CREATE );
+
+	if ( out_handle < 0 )
+	{
+		printf( "Can't create %s\n", romfile );
+		exit(-1);
+	}
+
+	/*
+	 * When tbase > ROM_START, it would probably be better to pad here and
+	 * make corresponding adjustments to pad_up() and the logic to pad to
+	 * dbase below as well. However, this code matches what v6.81 does.
+	 */
+
+	cur_offset += write_sec( out_handle, in_handle,
+				 sec_offset, theHeader.tsize );
+
+	if ( theHeader.dsize > 0 )
+	{
+		if ( is_cof )
+		{
+			sec_offset = dta_header.offset;
+		}
+		else
+		{
+			sec_offset = PACKED_SIZEOF(ABS_HDR) + theHeader.tsize;
+		}
+
+		cur_offset += pad( out_handle, cur_offset,
+				   theHeader.dbase - theHeader.tbase );
+
+		cur_offset += write_sec( out_handle, in_handle,
+					 sec_offset, theHeader.dsize );
+	}
+
+	pad_up( out_handle, cur_offset );
 
 	Fclose( out_handle );
 }
@@ -703,14 +840,14 @@ void usage(void)
 
 	printf( "Option switches are:\n\n" );
 	printf( "-q = Quiet mode, don't print information about executable file.\n\n" );
-	printf( "-r <romfile> = Create ROM image file named <romfile> from executable (*)\n\n" );
+	printf( "-r <romfile> = Create ROM image file named <romfile> from executable\n\n" );
 	printf( "-rs <romfile> = Same as -r, except also create DB script to load and run file. (*)\n\n" );
-	printf( "-p = Pad ROM file with zero bytes to next 2mb boundary (*)\n" );
+	printf( "-p = Pad ROM file with zero bytes to next 2mb boundary\n" );
 	printf( "    (this must be used alongwith the -r or -rs switch)\n\n" );
-	printf( "-p4 = Same as -p, exceptpadsto a 4mb boundary (*)\n" );
-	printf( "    (this must be used alongwith the -r or -rs switch)\n\n" );
-	printf( "-z = Pad unusedportionswith $00 bytes instead of $FF bytes (*)\n" );
-	printf( "    (this must be used alongwith the -p or -p4 switch)\n\n" );
+	printf( "-p4 = Same as -p, except pads to a 4mb boundary\n" );
+	printf( "    (this must be used along with the -r or -rs switch)\n\n" );
+	printf( "-z = Pad unused portions with $00 bytes instead of $FF bytes\n" );
+	printf( "    (this must be used along with the -p or -p4 switch)\n\n" );
 	printf( "-f = Use 'fread' command in DB script, instead of 'read'\n\n" );
 	printf( " (*) These options are not yet functional in version 7.\n\n" );
 }
@@ -723,7 +860,7 @@ void main( int argc, char *argv[] )
 {
 int in_handle;
 short has_period;
-char infile[260], *ptr, *filename, *rom_filename = NULL;
+char infile[260], *ptr, *filename;
 int argument;
 
 	if(argc < 2)
@@ -754,7 +891,7 @@ int argument;
 				usage();
 				exit(-1);
 			}
-			rom_filename = argv[argument];
+			romfile = argv[argument];
 		}
 		else if( ! strcmp( "-rs", argv[argument] ) )
 		{
@@ -764,15 +901,17 @@ int argument;
 				usage();
 				exit(-1);
 			}
-			rom_filename = argv[argument];
+			romfile = argv[argument];
 		}
 		else if( ! strcmp( "-p", argv[argument] ) )
 		{
-			pad = 2;		/* Pad to 2mb boundary */
+			/* Pad ROM to 2mb boundary */
+			align_size = 2 * 1024 * 1024;
 		}
 		else if( ! strcmp( "-p4", argv[argument] ) )
 		{
-			pad = 4; /* Pad to 4mb boundary */
+			/* Pad ROM to 4mb boundary */
+			align_size = 4 * 1024 * 1024;
 		}
 		else if( ! strcmp( "-z", argv[argument] ) )
 		{
