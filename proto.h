@@ -26,6 +26,7 @@ size_t write_sec( int out_handle, int in_handle, off_t offset, size_t bytes_left
 void write_db_file( const char *base_fname, int in_handle );
 void write_sym_file( const char *base_fname, int fhand );
 void write_rom_file( int in_handle );
+void write_rom_script( void );
 void show_dri_symbol_type( unsigned int symtype );
 int show_bsd_symbol_type( int32_t value, char *str, int symtype, int other, int description );
 void usage(void);

@@ -50,6 +50,7 @@ BSD_Symbol *coff_symbols;
 
 static short quiet = 0;
 static short use_fread = 0;
+static short rom_db_script = 0;
 static size_t align_size = 0;
 static uint8_t pad_byte = 0xff;
 static const char *romfile = NULL;
@@ -235,6 +236,10 @@ char *ptr, original_fname[260];
 		}
 
 		write_rom_file( in_handle );
+		if ( rom_db_script )
+		{
+			write_rom_script();
+		}
 	}
 	else
 	{
@@ -410,6 +415,59 @@ size_t target_size;
 		 pad_byte ? "$FF" : "ZERO" );
 
 	pad( out_handle, cur_offset + ROM_HDR_SIZE, target_size );
+}
+
+void write_rom_script( void )
+{
+char strbuf[256];
+size_t fnamelen;
+int out_handle;
+int i;
+
+	strncpy(strbuf, romfile, 255);
+	strbuf[255] = '\0';
+	fnamelen = strlen(strbuf);
+
+	for ( i = fnamelen - 1; i >= 0; i-- )
+	{
+		if ( strbuf[i] == '.' )
+		{
+			strbuf[i] = '\0';
+			break;
+		}
+	}
+
+	if ( i < 0 )
+	{
+		// No extension. Just append the new extension
+		i = fnamelen;
+	}
+
+	if ( i + 3 < 256 )
+	{
+		strbuf[i++] = '.';
+		strbuf[i++] = 'd';
+		strbuf[i++] = 'b';
+		strbuf[i] = '\0';
+	}
+
+	out_handle = Fopen( strbuf, FO_WRONLY | FO_CREATE );
+
+	if ( out_handle < 0 )
+	{
+		printf( "Can't create %s\n", strbuf );
+		exit(-1);
+	}
+
+	sprintf( strbuf, "%s %s %x\n", (use_fread != 0) ? "fread" : "read",
+		 romfile, theHeader.tbase );
+	Fwrite( out_handle, strlen(strbuf), strbuf );
+	sprintf( strbuf, "xpc %x\n", theHeader.tbase );
+	Fwrite( out_handle, strlen(strbuf), strbuf );
+	sprintf( strbuf, "g\n" );
+	Fwrite( out_handle, strlen(strbuf), strbuf );
+
+	Fclose( out_handle );
 }
 
 void write_rom_file( int in_handle )
@@ -841,7 +899,7 @@ void usage(void)
 	printf( "Option switches are:\n\n" );
 	printf( "-q = Quiet mode, don't print information about executable file.\n\n" );
 	printf( "-r <romfile> = Create ROM image file named <romfile> from executable\n\n" );
-	printf( "-rs <romfile> = Same as -r, except also create DB script to load and run file. (*)\n\n" );
+	printf( "-rs <romfile> = Same as -r, except also create DB script to load and run file.\n\n" );
 	printf( "-p = Pad ROM file with zero bytes to next 2mb boundary\n" );
 	printf( "    (this must be used alongwith the -r or -rs switch)\n\n" );
 	printf( "-p4 = Same as -p, except pads to a 4mb boundary\n" );
@@ -849,7 +907,6 @@ void usage(void)
 	printf( "-z = Pad unused portions with $00 bytes instead of $FF bytes\n" );
 	printf( "    (this must be used along with the -p or -p4 switch)\n\n" );
 	printf( "-f = Use 'fread' command in DB script, instead of 'read'\n\n" );
-	printf( " (*) These options are not yet functional in version 7.\n\n" );
 }
 
 /**************************************************************************/
@@ -883,17 +940,9 @@ int argument;
 		{
 			quiet = 1;
 		}
-		else if( ! strcmp( "-r", argv[argument] ) )
-		{
-			argument++;
-			if (argument >= argc)
-			{
-				usage();
-				exit(-1);
-			}
-			romfile = argv[argument];
-		}
-		else if( ! strcmp( "-rs", argv[argument] ) )
+		else if( ! strcmp( "-r", argv[argument] ) ||
+			 ( ! strcmp( "-rs", argv[argument] ) &&
+			     ( rom_db_script = 1 ) ) )
 		{
 			argument++;
 			if (argument >= argc)
