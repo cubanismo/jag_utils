@@ -1,0 +1,20 @@
+v7.0: March 29, 2022
+--------------------
+Usage information does not "page" the output. It is assumed all modern terminals
+are capable of scrollback, or the user is capable of using their own pager.
+
+Really default to filling with $FF for padding bytes. Version 6.80 claimed to
+switch the default to $FF, but version 6.81 actually used $00 all the time.
+
+Really fix bug with corrupt symbol files being generated. The July 20, 1994
+release claimed to fix this, but v6.81 still wrote a symbol section size 14
+bytes larger than the actual size of the section.
+
+Really allow creating "ROMs" that don't execute in ROM space. Version 6.81
+claimed to allow this, but still printed an error and exited as described by the
+version 6.80 changelog rather than printing a warning and continuing. Note this
+probably interacts poorly with the 2mb/4mb ROM padding options, but there's also
+no reason to use these options when generating non-ROM-space text+data blobs
+(The version 6.81 changelog notes this can be used to create binary images for
+use on JagCD games), so that's probably OK.
+
