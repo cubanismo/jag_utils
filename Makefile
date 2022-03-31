@@ -6,11 +6,11 @@ all: $(PROGS)
 
 readint.o: readint.c
 
-allsyms: allsyms.c readint.c size.h proto.h include/osbind.h
-	$(CC) $(CFLAGS) $< -o $@
+allsyms: allsyms.c readint.o size.h proto.h include/osbind.h
+	$(CC) $(CFLAGS) readint.o $< -o $@
 
-symval: symval.c readint.c size.h proto.h include/osbind.h
-	$(CC) $(CFLAGS) $< -o $@
+symval: symval.c readint.o size.h proto.h include/osbind.h
+	$(CC) $(CFLAGS) readint.o $< -o $@
 
 size: size.c readint.o size.h proto.h include/osbind.h
 	$(CC) $(CFLAGS) readint.o $< -o $@

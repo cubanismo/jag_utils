@@ -17,8 +17,6 @@
 #include "size.h"
 #include "proto.h"
 
-#include "readint.c"
-
 #include <inttypes.h>
 
 /**************************************************************************/
