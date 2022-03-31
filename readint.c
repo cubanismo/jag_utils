@@ -1,6 +1,7 @@
 #include "osbind.h"
 
-#ifdef __MSDOS__
+/* Why does VC++ make this so hard? Punting. */
+#if defined(__MSDOS__) || defined(_WIN32)
 #define SWAP_BYTES 1
 #else
 #include <endian.h>

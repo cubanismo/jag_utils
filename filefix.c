@@ -321,7 +321,7 @@ const char is_cof = (theHeader.magic == 0x0150);
 		exit(-1);
 	}
 
-	out_handle = Fopen( outfile, FO_WRONLY | FO_CREATE );
+	out_handle = Fopen( outfile, FO_WRONLY | FO_CREATE | FO_BINARY );
 
 	if ( out_handle < 0 )
 	{
@@ -479,7 +479,7 @@ int out_handle;
 	if ( !quiet )
 	  printf( "Creating ROM image file: %s\n", romfile );
 
-	out_handle = Fopen( romfile, FO_WRONLY | FO_CREATE );
+	out_handle = Fopen( romfile, FO_WRONLY | FO_CREATE | FO_BINARY );
 
 	if ( out_handle < 0 )
 	{
@@ -814,7 +814,7 @@ char outfile[259];
 	outfile[255] = '\0';
 	strcat(outfile, ".sym");
 
-	out_handle = Fopen( outfile, FO_WRONLY | FO_CREATE );
+	out_handle = Fopen( outfile, FO_WRONLY | FO_CREATE | FO_BINARY );
 
 	if ( out_handle < 0 )
 	{
@@ -983,7 +983,7 @@ int argument;
 	strncpy( infile, filename, 255 );
 	has_period = (strchr(infile,'.') != NULL) ? 1 : 0;
 
-	in_handle = Fopen( infile, 0 );
+	in_handle = Fopen( infile, FO_BINARY );
 	if( in_handle < 0 )
 	{
 		/* If there's an extension specified in the input filename, */
@@ -999,7 +999,7 @@ int argument;
 
 		strcat(infile,".cof");
 
-		in_handle = Fopen( infile, 0 );
+		in_handle = Fopen( infile, FO_BINARY );
 		if( in_handle < 0 )
 		{
 			/* file.COF not found, so try .ABS extension */
@@ -1008,7 +1008,7 @@ int argument;
 			  *ptr=0;
 			strcat(infile,".abs");
 
-			if((in_handle = Fopen(infile,0)) < 0)
+			if((in_handle = Fopen( infile, FO_BINARY )) < 0)
 			{
 				printf("Error: Can't open inputfile: %s\n",filename);
 				exit(-1);

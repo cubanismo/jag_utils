@@ -733,7 +733,7 @@ void main( int argc, char *argv[] )
 {
 int in_handle;
 short has_period;
-char infile[256], *ptr, *filename;
+char infile[256], *ptr, *filename = NULL;
 int argument;
 
 	printf( "SIZE: Version %d.%02d\n\n", MAJOR_VERSION, MINOR_VERSION );
@@ -809,6 +809,12 @@ int argument;
 #endif
 	}
 
+	if (!filename)
+	{
+		usage();
+		exit(-1);
+	}
+
 /* If you don't sort by name (sort by value), then don't skip duplicate symbols. */
 
 	if( sort_options != SORT_BY_NAME )
@@ -821,7 +827,7 @@ int argument;
 	strncpy( infile, filename, 255 );
 	has_period = (strchr(infile,'.') != NULL) ? 1 : 0;
 
-	in_handle = Fopen( infile, 0 );
+	in_handle = Fopen( infile, FO_BINARY );
 	if( in_handle < 0 )
 	{
 		/* If there's an extension specified in the input filename, */
@@ -837,7 +843,7 @@ int argument;
 
 		strcat(infile,".cof");
 
-		in_handle = Fopen( infile, 0 );
+		in_handle = Fopen( infile, FO_BINARY );
 		if( in_handle < 0 )
 		{
 			/* file.COF not found, so try .ABS extension */
@@ -846,7 +852,7 @@ int argument;
 			  *ptr=0;
 			strcat(infile,".abs");
 
-			if((in_handle = Fopen(infile,0)) < 0)
+			if((in_handle = Fopen( infile, FO_BINARY )) < 0)
 			{
 				printf("Error: Can't open inputfile: %s\n",filename);
 				exit(-1);
