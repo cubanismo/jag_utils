@@ -17,7 +17,7 @@
 
 #include "size.h"
 #include "proto.h"
-
+#include "univ_header.h"
 #include <inttypes.h>
 
 /**************************************************************************/
@@ -54,6 +54,7 @@ static short rom_db_script = 0;
 static size_t align_size = 0;
 static uint8_t pad_byte = 0xff;
 static const char *romfile = NULL;
+static int add_univ_header = 0;
 
 char *coff_symbol_name_strings;
 
@@ -492,6 +493,18 @@ int out_handle;
 	 * make corresponding adjustments to pad_up() and the logic to pad to
 	 * dbase below as well. However, this code matches what v6.81 does.
 	 */
+        if ( add_univ_header ){
+          printf("Adding universal header\n");
+          Fwrite(out_handle, 8192, univ_bin);
+        } else {
+          pad( out_handle, 0, 8192);
+        }
+        if ( theHeader.tbase >= ROM_START ){
+          /*
+          ** Need to patch rom header!!
+          */
+          pad( out_handle, 0, theHeader.tbase - ROM_START);
+        }
 
 	cur_offset += write_sec( out_handle, in_handle,
 				 sec_offset, theHeader.tsize );
@@ -899,6 +912,7 @@ void usage(void)
 	printf( "-q = Quiet mode, don't print information about executable file.\n\n" );
 	printf( "-r <romfile> = Create ROM image file named <romfile> from executable\n\n" );
 	printf( "-rs <romfile> = Same as -r, except also create DB script to load and run file.\n\n" );
+        printf( "-u Add universal ROM header (together with -r or -rs)\n\n");
 	printf( "-p = Pad ROM file with $FF bytes to next 2mb boundary\n" );
 	printf( "    (this must be used alongwith the -r or -rs switch)\n\n" );
 	printf( "-p1 = Same as -p, except pads to a 1mb boundary\n" );
@@ -952,6 +966,10 @@ int argument;
 				exit(-1);
 			}
 			romfile = argv[argument];
+		}
+		else if( ! strcmp( "-u", argv[argument] ) )
+		{
+                  add_univ_header = 1;
 		}
 		else if( ! strcmp( "-p", argv[argument] ) )
 		{
