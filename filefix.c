@@ -494,7 +494,8 @@ int out_handle;
 	 * dbase below as well. However, this code matches what v6.81 does.
 	 */
         if ( add_univ_header ){
-          printf("Adding universal header\n");
+          if ( !quiet )
+            printf("Adding universal header\n");
           Fwrite(out_handle, 8192, univ_bin);
         } else {
           pad( out_handle, 0, 8192);
