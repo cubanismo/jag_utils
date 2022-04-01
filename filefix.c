@@ -81,7 +81,7 @@ uint32_t sym_a_val, sym_b_val;
 
 	aa = (char HUGE *)a;
 	bb = (char HUGE *)b;
-	
+
 	for( i = 0; i < 8; i++ )	/* Check byte by byte so it fails faster! */
 	{
 		if( *aa > *bb )
@@ -98,7 +98,7 @@ uint32_t sym_a_val, sym_b_val;
 
 	sym_a_val = dri_symbol_value(a);
 	sym_b_val = dri_symbol_value(b);
-	
+
 	if( sym_a_val > sym_b_val )
 	  return(1);
 	else if( sym_a_val < sym_b_val )
@@ -182,7 +182,7 @@ char *ptr, original_fname[260];
 	  *ptr=0;
 
 	theHeader.magic = readshort( in_handle );
-	
+
 /* BSD Objects have a LONG magic number, so move to start, read it, */
 /* then move back to where we started. (At 2 bytes into file). */
 
@@ -191,16 +191,16 @@ char *ptr, original_fname[260];
 	Fseek( 2L, in_handle, 0 );
 
 /* See if the magic number indicates a DRI/Alcyon-format executable or object module file */
-	
+
 	if( theHeader.magic == 0x601b )
-	{			
+	{
 		read_dri_header( in_handle );
 		if ( !quiet )
 		  print_dri_info();
 	}
 
 /* Not DRI-format, so test for BSD/COFF. */
-	
+
 	else if( theHeader.magic == 0x0150 )
 	{
 		read_coff_header( in_handle );
@@ -399,7 +399,7 @@ size_t target_size;
 
 	if ( !align_size )
 		return;
-	
+
 	if ( !quiet )
 	  printf("Wrote %zu bytes to file so far...\n", cur_offset);
 
@@ -672,7 +672,7 @@ void read_coff_header( int in_handle )
 	run_header.entry = readlong(in_handle);
 	run_header.tbase = readlong(in_handle);
 	run_header.dbase = readlong(in_handle);
-	
+
 	read_sec_hdr(in_handle, &txt_header);
 	read_sec_hdr(in_handle, &dta_header);
 	read_sec_hdr(in_handle, &bss_header);
@@ -781,7 +781,7 @@ char outfile[259];
 	for (longcount = 0 ; longcount < theHeader.ssize ; longcount += 14)
 	{
 	int show_it;
-	
+
 		a = ptr;
 		b = (char HUGE *)a + 14;
 		uptr = (uint8_t *)ptr;
@@ -899,12 +899,14 @@ void usage(void)
 	printf( "-q = Quiet mode, don't print information about executable file.\n\n" );
 	printf( "-r <romfile> = Create ROM image file named <romfile> from executable\n\n" );
 	printf( "-rs <romfile> = Same as -r, except also create DB script to load and run file.\n\n" );
-	printf( "-p = Pad ROM file with zero bytes to next 2mb boundary\n" );
+	printf( "-p = Pad ROM file with $FF bytes to next 2mb boundary\n" );
 	printf( "    (this must be used alongwith the -r or -rs switch)\n\n" );
+	printf( "-p1 = Same as -p, except pads to a 1mb boundary\n" );
+	printf( "    (this must be used along with the -r or -rs switch)\n\n" );
 	printf( "-p4 = Same as -p, except pads to a 4mb boundary\n" );
 	printf( "    (this must be used along with the -r or -rs switch)\n\n" );
 	printf( "-z = Pad unused portions with $00 bytes instead of $FF bytes\n" );
-	printf( "    (this must be used along with the -p or -p4 switch)\n\n" );
+	printf( "    (this must be used along with the -p,-p1 or -p4 switch)\n\n" );
 	printf( "-f = Use 'fread' command in DB script, instead of 'read'\n\n" );
 }
 
@@ -955,6 +957,11 @@ int argument;
 		{
 			/* Pad ROM to 2mb boundary */
 			align_size = 2 * 1024 * 1024;
+		}
+		else if( ! strcmp( "-p1", argv[argument] ) )
+		{
+			/* Pad ROM to 4mb boundary */
+			align_size = 1 * 1024 * 1024;
 		}
 		else if( ! strcmp( "-p4", argv[argument] ) )
 		{
@@ -1019,4 +1026,3 @@ int argument;
 	Fclose(in_handle);
 	exit(0);
 }
-
