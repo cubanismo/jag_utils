@@ -899,7 +899,7 @@ void usage(void)
 	printf( "-q = Quiet mode, don't print information about executable file.\n\n" );
 	printf( "-r <romfile> = Create ROM image file named <romfile> from executable\n\n" );
 	printf( "-rs <romfile> = Same as -r, except also create DB script to load and run file.\n\n" );
-	printf( "-p = Pad ROM file with zero bytes to next 2mb boundary\n" );
+	printf( "-p = Pad ROM file with $FF bytes to next 2mb boundary\n" );
 	printf( "    (this must be used alongwith the -r or -rs switch)\n\n" );
 	printf( "-p4 = Same as -p, except pads to a 4mb boundary\n" );
 	printf( "    (this must be used along with the -r or -rs switch)\n\n" );
