@@ -4,7 +4,7 @@
 
 	Written by Mike Fulton
 	Version 7 recreated by James Jones based on SIZE.C by Mike Fulton
-	Last Modified: 9:12pm, March 29 2022
+	Last Modified: 12:03am, April 2 2022
 
 	This program should take a file name with or without extension
 	read in the .ABS or .COF and produce .SYM, .TXT, and .DTA files,
@@ -27,7 +27,7 @@
 #define DEBUG	(0)
 
 #define MAJOR_VERSION (7)
-#define MINOR_VERSION (0)
+#define MINOR_VERSION (1)
 
 #define SEC_TEXT	(0)
 #define SEC_DATA	(1)
@@ -51,6 +51,7 @@ BSD_Symbol *coff_symbols;
 static short quiet = 0;
 static short use_fread = 0;
 static short rom_db_script = 0;
+static short no_header = 0;
 static size_t align_size = 0;
 static uint8_t pad_byte = 0xff;
 static const char *romfile = NULL;
@@ -397,6 +398,7 @@ size_t bytes_written = 0;
 static void pad_up( int out_handle, size_t cur_offset)
 {
 size_t target_size;
+const size_t hdr_bytes = no_header ? 0 : ROM_HDR_SIZE;
 
 	if ( !align_size )
 		return;
@@ -404,17 +406,17 @@ size_t target_size;
 	if ( !quiet )
 	  printf("Wrote %zu bytes to file so far...\n", cur_offset);
 
+	cur_offset += hdr_bytes;
+
 	// This doesn't really do the right thing when tbase is not
 	// equal to ROM_START, but it matches what v6.81 does.
-	target_size = (cur_offset + ROM_HDR_SIZE + (align_size - 1)) &
-		~(align_size - 1);
+	target_size = (cur_offset + (align_size - 1)) & ~(align_size - 1);
 
 	if ( !quiet )
 	  printf("Padding end of ROM image file with %zu %s bytes\n",
-		 target_size - (cur_offset + ROM_HDR_SIZE),
-		 pad_byte ? "$FF" : "ZERO" );
+		 target_size - cur_offset, pad_byte ? "$FF" : "ZERO" );
 
-	pad( out_handle, cur_offset + ROM_HDR_SIZE, target_size );
+	pad( out_handle, cur_offset, target_size );
 }
 
 void write_rom_script( void )
@@ -913,16 +915,19 @@ void usage(void)
 	printf( "-q = Quiet mode, don't print information about executable file.\n\n" );
 	printf( "-r <romfile> = Create ROM image file named <romfile> from executable\n\n" );
 	printf( "-rs <romfile> = Same as -r, except also create DB script to load and run file.\n\n" );
-        printf( "-u Add universal ROM header (together with -r or -rs)\n\n");
 	printf( "-p = Pad ROM file with $FF bytes to next 2mb boundary\n" );
 	printf( "    (this must be used alongwith the -r or -rs switch)\n\n" );
 	printf( "-p1 = Same as -p, except pads to a 1mb boundary\n" );
 	printf( "    (this must be used along with the -r or -rs switch)\n\n" );
 	printf( "-p4 = Same as -p, except pads to a 4mb boundary\n" );
 	printf( "    (this must be used along with the -r or -rs switch)\n\n" );
+	printf( "-pn<x> = Same as -p, except pads to 2^<x> boundary, where 1 <= <x> <= 31\n" );
+	printf( "    (this must be used along with the -r or -rs switch)\n\n" );
 	printf( "-z = Pad unused portions with $00 bytes instead of $FF bytes\n" );
-	printf( "    (this must be used along with the -p,-p1 or -p4 switch)\n\n" );
+	printf( "    (this must be used along with the -p, -p4, or -pn switch)\n\n" );
 	printf( "-f = Use 'fread' command in DB script, instead of 'read'\n\n" );
+	printf( "-n = Assume no header: Do not subtract 8k from final size when padding.\n\n" );
+	printf( "    (this must be used along with the -p, -p4, or -pn switch)\n\n" );
 }
 
 /**************************************************************************/
@@ -987,6 +992,18 @@ int argument;
 			/* Pad ROM to 4mb boundary */
 			align_size = 4 * 1024 * 1024;
 		}
+		else if( ! strncmp( "-pn", argv[argument], 3 ) )
+		{
+			/* Pad ROM to arbitrary power of 2 boundary */
+			align_size = atoi(argv[argument] + 3);
+			if ( align_size < 1 || align_size > 31 )
+			{
+				printf("Invalid padding size\n\n");
+				usage();
+				exit(-1);
+			}
+			align_size = 1 << align_size;
+		}
 		else if( ! strcmp( "-z", argv[argument] ) )
 		{
 			pad_byte = 0x00; /* Pad with $00 instead of $ff */
@@ -994,6 +1011,10 @@ int argument;
 		else if( ! strcmp( "-f", argv[argument] ) )
 		{
 			use_fread = 1;
+		}
+		else if( ! strcmp( "-n", argv[argument] ) )
+		{
+			no_header = 1;
 		}
 		else if( strncmp( "-", argv[argument], 1 ) ) /* unrecognized switch */
 		{
