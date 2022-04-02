@@ -51,6 +51,7 @@ BSD_Symbol *coff_symbols;
 static short quiet = 0;
 static short use_fread = 0;
 static short rom_db_script = 0;
+static short no_header = 0;
 static size_t align_size = 0;
 static uint8_t pad_byte = 0xff;
 static const char *romfile = NULL;
@@ -396,6 +397,7 @@ size_t bytes_written = 0;
 static void pad_up( int out_handle, size_t cur_offset)
 {
 size_t target_size;
+const size_t hdr_bytes = no_header ? 0 : ROM_HDR_SIZE;
 
 	if ( !align_size )
 		return;
@@ -403,17 +405,17 @@ size_t target_size;
 	if ( !quiet )
 	  printf("Wrote %zu bytes to file so far...\n", cur_offset);
 
+	cur_offset += hdr_bytes;
+
 	// This doesn't really do the right thing when tbase is not
 	// equal to ROM_START, but it matches what v6.81 does.
-	target_size = (cur_offset + ROM_HDR_SIZE + (align_size - 1)) &
-		~(align_size - 1);
+	target_size = (cur_offset + (align_size - 1)) & ~(align_size - 1);
 
 	if ( !quiet )
 	  printf("Padding end of ROM image file with %zu %s bytes\n",
-		 target_size - (cur_offset + ROM_HDR_SIZE),
-		 pad_byte ? "$FF" : "ZERO" );
+		 target_size - cur_offset, pad_byte ? "$FF" : "ZERO" );
 
-	pad( out_handle, cur_offset + ROM_HDR_SIZE, target_size );
+	pad( out_handle, cur_offset, target_size );
 }
 
 void write_rom_script( void )
@@ -908,6 +910,8 @@ void usage(void)
 	printf( "-z = Pad unused portions with $00 bytes instead of $FF bytes\n" );
 	printf( "    (this must be used along with the -p, -p4, or -pn switch)\n\n" );
 	printf( "-f = Use 'fread' command in DB script, instead of 'read'\n\n" );
+	printf( "-n = Assume no header: Do not subtract 8k from final size when padding.\n\n" );
+	printf( "    (this must be used along with the -p, -p4, or -pn switch)\n\n" );
 }
 
 /**************************************************************************/
@@ -982,6 +986,10 @@ int argument;
 		else if( ! strcmp( "-f", argv[argument] ) )
 		{
 			use_fread = 1;
+		}
+		else if( ! strcmp( "-n", argv[argument] ) )
+		{
+			no_header = 1;
 		}
 		else if( strncmp( "-", argv[argument], 1 ) ) /* unrecognized switch */
 		{
