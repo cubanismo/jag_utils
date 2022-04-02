@@ -1,4 +1,3 @@
-
 /*
 	filefix.c
 
@@ -27,7 +26,7 @@
 #define DEBUG	(0)
 
 #define MAJOR_VERSION (7)
-#define MINOR_VERSION (1)
+#define MINOR_VERSION (2)
 
 #define SEC_TEXT	(0)
 #define SEC_DATA	(1)
@@ -398,7 +397,7 @@ size_t bytes_written = 0;
 static void pad_up( int out_handle, size_t cur_offset)
 {
 size_t target_size;
-const size_t hdr_bytes = no_header ? 0 : ROM_HDR_SIZE;
+const size_t hdr_bytes = no_header ? ROM_HDR_SIZE : 0;
 
 	if ( !align_size )
 		return;
@@ -495,12 +494,16 @@ int out_handle;
 	 * make corresponding adjustments to pad_up() and the logic to pad to
 	 * dbase below as well. However, this code matches what v6.81 does.
 	 */
-        if ( add_univ_header ){
-          if ( !quiet )
-            printf("Adding universal header\n");
-          Fwrite(out_handle, 8192, univ_bin);
-        } else {
-          pad( out_handle, 0, 8192);
+        if ( no_header == 0 ){
+          if ( add_univ_header ){
+            if ( !quiet )
+              printf("Adding universal header\n");
+
+            Fwrite(out_handle, 8192, univ_bin);
+          } else {
+            pad( out_handle, 0, ROM_HDR_SIZE);
+          }
+          cur_offset = ROM_HDR_SIZE;
         }
         if ( theHeader.tbase >= ROM_START ){
           /*
@@ -927,7 +930,9 @@ void usage(void)
 	printf( "    (this must be used along with the -p, -p4, or -pn switch)\n\n" );
 	printf( "-f = Use 'fread' command in DB script, instead of 'read'\n\n" );
 	printf( "-n = Assume no header: Do not subtract 8k from final size when padding.\n\n" );
+
 	printf( "    (this must be used along with the -p, -p4, or -pn switch)\n\n" );
+        printf( "-u Add universal ROM header (together with -r or -rs)\n\n");
 }
 
 /**************************************************************************/
