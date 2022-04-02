@@ -903,8 +903,10 @@ void usage(void)
 	printf( "    (this must be used alongwith the -r or -rs switch)\n\n" );
 	printf( "-p4 = Same as -p, except pads to a 4mb boundary\n" );
 	printf( "    (this must be used along with the -r or -rs switch)\n\n" );
+	printf( "-pn<x> = Same as -p, except pads to 2^<x> boundary, where 1 <= <x> <= 31\n" );
+	printf( "    (this must be used along with the -r or -rs switch)\n\n" );
 	printf( "-z = Pad unused portions with $00 bytes instead of $FF bytes\n" );
-	printf( "    (this must be used along with the -p or -p4 switch)\n\n" );
+	printf( "    (this must be used along with the -p, -p4, or -pn switch)\n\n" );
 	printf( "-f = Use 'fread' command in DB script, instead of 'read'\n\n" );
 }
 
@@ -960,6 +962,18 @@ int argument;
 		{
 			/* Pad ROM to 4mb boundary */
 			align_size = 4 * 1024 * 1024;
+		}
+		else if( ! strncmp( "-pn", argv[argument], 3 ) )
+		{
+			/* Pad ROM to arbitrary power of 2 boundary */
+			align_size = atoi(argv[argument] + 3);
+			if ( align_size < 1 || align_size > 31 )
+			{
+				printf("Invalid padding size\n\n");
+				usage();
+				exit(-1);
+			}
+			align_size = 1 << align_size;
 		}
 		else if( ! strcmp( "-z", argv[argument] ) )
 		{
