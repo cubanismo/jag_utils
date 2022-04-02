@@ -4,7 +4,7 @@
 
 	Written by Mike Fulton
 	Version 7 recreated by James Jones based on SIZE.C by Mike Fulton
-	Last Modified: 9:12pm, March 29 2022
+	Last Modified: 12:03am, April 2 2022
 
 	This program should take a file name with or without extension
 	read in the .ABS or .COF and produce .SYM, .TXT, and .DTA files,
@@ -27,7 +27,7 @@
 #define DEBUG	(0)
 
 #define MAJOR_VERSION (7)
-#define MINOR_VERSION (0)
+#define MINOR_VERSION (1)
 
 #define SEC_TEXT	(0)
 #define SEC_DATA	(1)
