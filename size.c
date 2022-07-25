@@ -26,7 +26,7 @@
 #define DEBUG	(0)
 
 #define MAJOR_VERSION (2)
-#define MINOR_VERSION (23)
+#define MINOR_VERSION (24)
 
 #define SORT_BY_NAME	(0)
 #define SORT_BY_VALUE	(1)
