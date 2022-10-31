@@ -24,7 +24,7 @@ char chr;
 
 unsigned short readshort( int fhand )
 {
-short s;
+unsigned short s;
 
 	Fread( fhand, 2L, &s );
 #ifdef SWAP_BYTES

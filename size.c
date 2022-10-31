@@ -26,7 +26,7 @@
 #define DEBUG	(0)
 
 #define MAJOR_VERSION (2)
-#define MINOR_VERSION (23)
+#define MINOR_VERSION (24)
 
 #define SORT_BY_NAME	(0)
 #define SORT_BY_VALUE	(1)
@@ -631,39 +631,72 @@ int32_t skipped, unknown_type;
 
 int show_bsd_symbol_type( int32_t value, char *str, int symtype, int other, int description )
 {
+	char *symDesc;
+
 	switch( symtype )
 	{
-		case 0xE0:
-		case 0xC0:
-		case 0xA0:
 		case 0x80:
+			if (str && (symDesc = strchr(str, ':')) && *++symDesc) {
+				if ((symDesc[0] >= '0' && symDesc[0] <= '9') ||
+				    symDesc[0] == '(' || symDesc[0] == '-') {
+					printf( "0x%08" PRIx32 "  %-35s  Local Variable\n", value, str);
+				} else {
+					/* Type definition */
+					printf( "0x%08" PRIx32 "  %-35s  Type Definition\n", value, str);
+				}
+				return 1;
+			}
+			/* Malformed stabs data. Fall through */
+		case 0xA0:
 		case 0x40:
-		case 0x24:
-		case 0x20:
-//			printf( "0x%08" PRIx32 "  %-35s  Unknown Type: 0x%02x\n", value, " " /*str*/, symtype );
+			printf( "0x%08" PRIx32 "  %-35s  Unknown Type: 0x%02x\n", value, " " /*str*/, symtype );
 			return(1);
-
+		case 0x3c:
+			printf( "0x%08" PRIx32 "  %-35s  Debugger option\n", value, str);
+			return 1;
+		case 0x20:
+			printf( "0x%08" PRIx32 "  %-35s  Global\n", value, str );
+			break;
+		case 0x24:
+			printf( "0x%08" PRIx32 "  %-35s  Function\n", value, str );
+			break;
+		case 0xC0:
+			printf( "0x%08" PRIx32 "  %-35s  Left bracket/open block\n", value, str );
+			return 1;
+		case 0xE0:
+			printf( "0x%08" PRIx32 "  %-35s  Right bracket/close block\n", value, str );
+			return 1;
+		case 0xE2:
+			printf( "0x%08" PRIx32 "  %-35s  Begin common block\n", value, str );
+			return 1;
+		case 0xE4:
+			printf( "0x%08" PRIx32 "  %-35s  End common block\n", value, str );
+			return 1;
 		case 0x64:
-			printf( "%-47s  Primary Source Code File\n", str );
-			break;
+			printf( "0x%08" PRIx32 "  %-35s  Primary Source Code File\n", value, str );
+			return 1;
 		case 0x84:
-			printf( "%-47s  Included Source Code File\n", str );
-			break;
+			printf( "0x%08" PRIx32 "  %-35s  Included Source Code File\n", value, str );
+			return 1;
 /********/
 		case 0x44:
 			if( ! opt_skip_line_numbers )
-			  printf( "0x%08" PRIx32 "  %-35s  Text Line Number\n", value, str );
-			break;
+			  printf( "0x%08" PRIx32 "  %-35s  Text Line Number: %d\n", value, str, description );
+			return 1;
 		case 0x48:
 			if( ! opt_skip_line_numbers )
 			  printf( "0x%08" PRIx32 "  %-35s  BSS Line Number\n", value, " " );
-			break;
+			return 1;
+		case 0x4C:
+			if( ! opt_skip_line_numbers )
+			  printf( "0x%08" PRIx32 "  %-35s  GPU/DSP Line Number: %d\n", value, str, description );
+			return 1;
 /********/
 		case 0x09:
 			printf( "0x%08" PRIx32 " %-35s  Global BSS\n", value, str );
 			break;
 		case 0x08:
-			printf( "0x%08" PRIx32 "  %-35s  BSS\n", value, str );
+			printf( "0x%08" PRIx32 " %-35s  BSS\n", value, str );
 			break;
 /********/
 		case 0x07:
