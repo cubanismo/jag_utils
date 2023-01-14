@@ -27,7 +27,7 @@
 #define DEBUG	(0)
 
 #define MAJOR_VERSION (7)
-#define MINOR_VERSION (1)
+#define MINOR_VERSION (2)
 
 #define SEC_TEXT	(0)
 #define SEC_DATA	(1)
