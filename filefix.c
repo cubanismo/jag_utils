@@ -1,4 +1,3 @@
-
 /*
 	filefix.c
 
@@ -17,7 +16,7 @@
 
 #include "size.h"
 #include "proto.h"
-
+#include "univ_header.h"
 #include <inttypes.h>
 
 /**************************************************************************/
@@ -27,7 +26,7 @@
 #define DEBUG	(0)
 
 #define MAJOR_VERSION (7)
-#define MINOR_VERSION (1)
+#define MINOR_VERSION (2)
 
 #define SEC_TEXT	(0)
 #define SEC_DATA	(1)
@@ -55,6 +54,7 @@ static short no_header = 0;
 static size_t align_size = 0;
 static uint8_t pad_byte = 0xff;
 static const char *romfile = NULL;
+static int add_univ_header = 0;
 
 char *coff_symbol_name_strings;
 
@@ -82,7 +82,7 @@ uint32_t sym_a_val, sym_b_val;
 
 	aa = (char HUGE *)a;
 	bb = (char HUGE *)b;
-	
+
 	for( i = 0; i < 8; i++ )	/* Check byte by byte so it fails faster! */
 	{
 		if( *aa > *bb )
@@ -99,7 +99,7 @@ uint32_t sym_a_val, sym_b_val;
 
 	sym_a_val = dri_symbol_value(a);
 	sym_b_val = dri_symbol_value(b);
-	
+
 	if( sym_a_val > sym_b_val )
 	  return(1);
 	else if( sym_a_val < sym_b_val )
@@ -183,7 +183,7 @@ char *ptr, original_fname[260];
 	  *ptr=0;
 
 	theHeader.magic = readshort( in_handle );
-	
+
 /* BSD Objects have a LONG magic number, so move to start, read it, */
 /* then move back to where we started. (At 2 bytes into file). */
 
@@ -192,16 +192,16 @@ char *ptr, original_fname[260];
 	Fseek( 2L, in_handle, 0 );
 
 /* See if the magic number indicates a DRI/Alcyon-format executable or object module file */
-	
+
 	if( theHeader.magic == 0x601b )
-	{			
+	{
 		read_dri_header( in_handle );
 		if ( !quiet )
 		  print_dri_info();
 	}
 
 /* Not DRI-format, so test for BSD/COFF. */
-	
+
 	else if( theHeader.magic == 0x0150 )
 	{
 		read_coff_header( in_handle );
@@ -397,11 +397,11 @@ size_t bytes_written = 0;
 static void pad_up( int out_handle, size_t cur_offset)
 {
 size_t target_size;
-const size_t hdr_bytes = no_header ? 0 : ROM_HDR_SIZE;
+const size_t hdr_bytes = no_header ? ROM_HDR_SIZE : 0;
 
 	if ( !align_size )
 		return;
-	
+
 	if ( !quiet )
 	  printf("Wrote %zu bytes to file so far...\n", cur_offset);
 
@@ -494,6 +494,23 @@ int out_handle;
 	 * make corresponding adjustments to pad_up() and the logic to pad to
 	 * dbase below as well. However, this code matches what v6.81 does.
 	 */
+        if ( no_header == 0 ){
+          if ( add_univ_header ){
+            if ( !quiet )
+              printf("Adding universal header\n");
+
+            Fwrite(out_handle, 8192, univ_bin);
+          } else {
+            pad( out_handle, 0, ROM_HDR_SIZE);
+          }
+          cur_offset = ROM_HDR_SIZE;
+        }
+        if ( theHeader.tbase >= ROM_START ){
+          /*
+          ** Need to patch rom header!!
+          */
+          pad( out_handle, 0, theHeader.tbase - ROM_START);
+        }
 
 	cur_offset += write_sec( out_handle, in_handle,
 				 sec_offset, theHeader.tsize );
@@ -674,7 +691,7 @@ void read_coff_header( int in_handle )
 	run_header.entry = readlong(in_handle);
 	run_header.tbase = readlong(in_handle);
 	run_header.dbase = readlong(in_handle);
-	
+
 	read_sec_hdr(in_handle, &txt_header);
 	read_sec_hdr(in_handle, &dta_header);
 	read_sec_hdr(in_handle, &bss_header);
@@ -783,7 +800,7 @@ char outfile[259];
 	for (longcount = 0 ; longcount < theHeader.ssize ; longcount += 14)
 	{
 	int show_it;
-	
+
 		a = ptr;
 		b = (char HUGE *)a + 14;
 		uptr = (uint8_t *)ptr;
@@ -903,6 +920,8 @@ void usage(void)
 	printf( "-rs <romfile> = Same as -r, except also create DB script to load and run file.\n\n" );
 	printf( "-p = Pad ROM file with $FF bytes to next 2mb boundary\n" );
 	printf( "    (this must be used alongwith the -r or -rs switch)\n\n" );
+	printf( "-p1 = Same as -p, except pads to a 1mb boundary\n" );
+	printf( "    (this must be used along with the -r or -rs switch)\n\n" );
 	printf( "-p4 = Same as -p, except pads to a 4mb boundary\n" );
 	printf( "    (this must be used along with the -r or -rs switch)\n\n" );
 	printf( "-pn<x> = Same as -p, except pads to 2^<x> boundary, where 1 <= <x> <= 31\n" );
@@ -911,7 +930,9 @@ void usage(void)
 	printf( "    (this must be used along with the -p, -p4, or -pn switch)\n\n" );
 	printf( "-f = Use 'fread' command in DB script, instead of 'read'\n\n" );
 	printf( "-n = Assume no header: Do not subtract 8k from final size when padding.\n\n" );
+
 	printf( "    (this must be used along with the -p, -p4, or -pn switch)\n\n" );
+        printf( "-u Add universal ROM header (together with -r or -rs)\n\n");
 }
 
 /**************************************************************************/
@@ -957,10 +978,19 @@ int argument;
 			}
 			romfile = argv[argument];
 		}
+		else if( ! strcmp( "-u", argv[argument] ) )
+		{
+                  add_univ_header = 1;
+		}
 		else if( ! strcmp( "-p", argv[argument] ) )
 		{
 			/* Pad ROM to 2mb boundary */
 			align_size = 2 * 1024 * 1024;
+		}
+		else if( ! strcmp( "-p1", argv[argument] ) )
+		{
+			/* Pad ROM to 4mb boundary */
+			align_size = 1 * 1024 * 1024;
 		}
 		else if( ! strcmp( "-p4", argv[argument] ) )
 		{
@@ -1041,4 +1071,3 @@ int argument;
 	Fclose(in_handle);
 	exit(0);
 }
-
